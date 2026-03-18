@@ -105,6 +105,12 @@ export class DebugManager {
 
     this.logger.info(`JDWP ready on port ${debugPort}`);
 
+    // Brief delay to let the JDWP agent reset after our probe connection.
+    // Our port poll triggers a partial handshake that the agent logs as
+    // "handshake failed - connection prematurally closed". The agent recovers
+    // and resumes listening, but we need a moment before the real attach.
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
     // Attach VS Code's Java debugger
     this.logger.info('Attaching Java debugger...');
     const started = await vscode.debug.startDebugging(workspaceFolder, {

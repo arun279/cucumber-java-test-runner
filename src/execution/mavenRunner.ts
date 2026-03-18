@@ -43,12 +43,17 @@ export class MavenRunner implements BuildToolRunner {
 
     const args: string[] = ['test'];
 
-    if (options.runnerClass) {
-      args.push(`-Dtest=${options.runnerClass}`);
-    }
-
     if (options.featureTargets.length > 0) {
+      // When targeting specific features via -Dcucumber.features, the Cucumber
+      // JUnit Platform Engine picks these up directly via ServiceLoader.
+      // We intentionally do NOT pass -Dtest=<RunnerClass> because that would
+      // cause the @Suite class to trigger the same engine a second time,
+      // resulting in double execution.
       args.push(`-Dcucumber.features=${options.featureTargets.join(',')}`);
+    } else if (options.runnerClass) {
+      // When running ALL tests (no specific feature targets), use the runner class
+      // to ensure only Cucumber tests run, not unrelated JUnit tests.
+      args.push(`-Dtest=${options.runnerClass}`);
     }
 
     if (options.tagExpression) {
