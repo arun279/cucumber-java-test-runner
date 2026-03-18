@@ -44,15 +44,19 @@ export class MavenRunner implements BuildToolRunner {
     const args: string[] = ['test'];
 
     if (options.featureTargets.length > 0) {
-      // When targeting specific features via -Dcucumber.features, the Cucumber
-      // JUnit Platform Engine picks these up directly via ServiceLoader.
-      // We intentionally do NOT pass -Dtest=<RunnerClass> because that would
-      // cause the @Suite class to trigger the same engine a second time,
-      // resulting in double execution.
+      // Target specific features. The Cucumber JUnit Platform Engine discovers
+      // these directly via ServiceLoader using the cucumber.features property.
       args.push(`-Dcucumber.features=${options.featureTargets.join(',')}`);
+
+      // Exclude the @Suite runner class (e.g., CucumberTest) from Surefire's
+      // class scanning to prevent double execution. Without this, Surefire
+      // discovers the engine via ServiceLoader AND discovers the Suite class
+      // via classpath scanning, causing the same scenarios to run twice.
+      if (options.runnerClass) {
+        args.push(`-Dtest=!${options.runnerClass}`);
+      }
     } else if (options.runnerClass) {
-      // When running ALL tests (no specific feature targets), use the runner class
-      // to ensure only Cucumber tests run, not unrelated JUnit tests.
+      // Running ALL tests — use the runner class to scope to Cucumber only.
       args.push(`-Dtest=${options.runnerClass}`);
     }
 

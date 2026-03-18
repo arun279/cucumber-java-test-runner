@@ -5,7 +5,9 @@ import { spawnProcess, ProcessResult } from '../util/processRunner';
 import { Logger } from '../util/logger';
 
 const DEBUG_TIMEOUT_MS = 120_000; // 2 minutes for Maven compile + fork
-const PORT_POLL_INTERVAL_MS = 500; // Check port every 500ms
+const JDWP_READY_PATTERN = /Listening for transport dt_socket at address:\s*(\d+)/;
+const DEBUGGER_ATTACH_RETRY_MS = 500;
+const DEBUGGER_ATTACH_MAX_RETRIES = 5;
 
 export class DebugManager {
   constructor(private readonly logger: Logger) {}
@@ -32,9 +34,10 @@ export class DebugManager {
   /**
    * Executes a Maven command with JDWP debugging.
    *
-   * Instead of parsing stdout for the "Listening for transport" message (which
-   * Surefire 3.x may not forward from the forked JVM), we poll the debug port
-   * with TCP connection attempts until it accepts connections.
+   * Detection strategy: Parse stdout/stderr for the JDWP "Listening for transport"
+   * message (Surefire does forward this from the forked JVM's stderr). Then attach
+   * the VS Code debugger with retries — no raw TCP port polling that would trigger
+   * spurious "handshake failed" errors from the JDWP agent.
    */
   async executeWithDebug(
     commandSpec: CommandSpec,
@@ -61,10 +64,38 @@ export class DebugManager {
 
     this.logger.info(`Starting debug session on port ${debugPort}`);
 
-    // Spawn Maven process
-    let processExited = false;
-    let processExitCode = 1;
+    // State for JDWP detection
+    let jdwpReady = false;
+    let resolveJdwp: () => void;
+    let rejectJdwp: (err: Error) => void;
 
+    const jdwpReadyPromise = new Promise<void>((resolve, reject) => {
+      resolveJdwp = resolve;
+      rejectJdwp = reject;
+    });
+
+    // Timeout for JDWP readiness
+    const timeout = setTimeout(() => {
+      if (!jdwpReady) {
+        rejectJdwp(new Error(
+          `Debug session timed out after ${DEBUG_TIMEOUT_MS / 1000}s waiting for Surefire forked JVM. ` +
+          'This may indicate a compilation error or missing test class.',
+        ));
+      }
+    }, DEBUG_TIMEOUT_MS);
+
+    const checkForJdwp = (line: string): void => {
+      if (jdwpReady) return;
+      const match = JDWP_READY_PATTERN.exec(line);
+      if (match) {
+        jdwpReady = true;
+        clearTimeout(timeout);
+        this.logger.info(`JDWP ready detected on port ${match[1]}`);
+        resolveJdwp();
+      }
+    };
+
+    // Spawn Maven process
     const processPromise = spawnProcess(
       commandSpec.executable,
       commandSpec.args,
@@ -73,56 +104,49 @@ export class DebugManager {
         env: commandSpec.env,
         onStdout: (line) => {
           testRun.appendOutput(line + '\r\n');
+          checkForJdwp(line);
         },
         onStderr: (line) => {
           testRun.appendOutput(line + '\r\n');
+          checkForJdwp(line);
         },
         cancellation,
       },
     );
 
+    // If process exits before JDWP is ready, reject
     processPromise.then((result) => {
-      processExited = true;
-      processExitCode = result.exitCode;
+      if (!jdwpReady) {
+        clearTimeout(timeout);
+        rejectJdwp(new Error(
+          `Maven process exited (code ${result.exitCode}) before JDWP became ready. ` +
+          'Check the test output for compilation errors.',
+        ));
+      }
     }).catch(() => {
-      processExited = true;
+      // Spawn error handled by the caller
     });
 
-    // Poll the debug port until it accepts connections or we timeout
-    this.logger.info(`Polling port ${debugPort} for JDWP readiness...`);
+    // Wait for JDWP "Listening" message in stdout/stderr
     try {
-      await this.waitForPort(debugPort, DEBUG_TIMEOUT_MS, () => processExited, cancellation);
+      await jdwpReadyPromise;
     } catch (err) {
       this.logger.error('Failed waiting for JDWP', err);
-      if (processExited) {
-        throw new Error(
-          `Maven process exited (code ${processExitCode}) before the debug port became ready. ` +
-          'Check the test output for compilation errors.',
-        );
-      }
       throw err;
     }
 
-    this.logger.info(`JDWP ready on port ${debugPort}`);
-
-    // Brief delay to let the JDWP agent reset after our probe connection.
-    // Our port poll triggers a partial handshake that the agent logs as
-    // "handshake failed - connection prematurally closed". The agent recovers
-    // and resumes listening, but we need a moment before the real attach.
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Attach VS Code's Java debugger
+    // Attach VS Code's Java debugger with retries.
+    // The JDWP agent is ready but startDebugging may fail on the first attempt
+    // if the agent hasn't fully initialized its protocol handler yet.
     this.logger.info('Attaching Java debugger...');
-    const started = await vscode.debug.startDebugging(workspaceFolder, {
-      type: 'java',
-      name: 'Cucumber Debug',
-      request: 'attach',
-      hostName: 'localhost',
-      port: debugPort,
-    });
+    const attached = await this.attachDebuggerWithRetry(
+      workspaceFolder,
+      debugPort,
+      DEBUGGER_ATTACH_MAX_RETRIES,
+    );
 
-    if (!started) {
-      this.logger.warn('Failed to start debug session — continuing without debugger');
+    if (!attached) {
+      this.logger.warn('Failed to attach debugger after retries — tests will run without debugging');
     } else {
       this.logger.info('Java debugger attached successfully');
     }
@@ -132,87 +156,32 @@ export class DebugManager {
   }
 
   /**
-   * Polls a TCP port until it accepts connections.
-   * This is more robust than parsing stdout for the JDWP "Listening" message,
-   * because Surefire 3.x may not forward the forked JVM's stderr output.
+   * Attempts to attach the VS Code Java debugger with retries.
+   * startDebugging may fail if called immediately after the JDWP agent
+   * prints "Listening" but before it's fully ready for the handshake.
    */
-  private waitForPort(
+  private async attachDebuggerWithRetry(
+    workspaceFolder: vscode.WorkspaceFolder,
     port: number,
-    timeoutMs: number,
-    hasProcessExited: () => boolean,
-    cancellation?: vscode.CancellationToken,
-  ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const startTime = Date.now();
-      let disposed = false;
+    maxRetries: number,
+  ): Promise<boolean> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const started = await vscode.debug.startDebugging(workspaceFolder, {
+        type: 'java',
+        name: 'Cucumber Debug',
+        request: 'attach',
+        hostName: 'localhost',
+        port,
+      });
 
-      const cleanup = (): void => {
-        disposed = true;
-      };
-
-      // Set up cancellation
-      let cancelDisposable: vscode.Disposable | undefined;
-      if (cancellation) {
-        cancelDisposable = cancellation.onCancellationRequested(() => {
-          cleanup();
-          reject(new Error('Debug session cancelled'));
-        });
+      if (started) {
+        return true;
       }
 
-      const tryConnect = (): void => {
-        if (disposed) return;
+      this.logger.info(`Debugger attach attempt ${attempt}/${maxRetries} failed, retrying...`);
+      await new Promise(resolve => setTimeout(resolve, DEBUGGER_ATTACH_RETRY_MS));
+    }
 
-        // Check timeout
-        if (Date.now() - startTime > timeoutMs) {
-          cleanup();
-          cancelDisposable?.dispose();
-          reject(new Error(
-            `Debug session timed out after ${timeoutMs / 1000}s waiting for Surefire forked JVM. ` +
-            'This may indicate a compilation error or missing test class.',
-          ));
-          return;
-        }
-
-        // Check if process exited
-        if (hasProcessExited()) {
-          cleanup();
-          cancelDisposable?.dispose();
-          reject(new Error('Maven process exited before debug port became ready'));
-          return;
-        }
-
-        // Try to connect to the port
-        const socket = new net.Socket();
-        socket.setTimeout(PORT_POLL_INTERVAL_MS);
-
-        socket.on('connect', () => {
-          // Port is open — JDWP is ready
-          socket.destroy();
-          cleanup();
-          cancelDisposable?.dispose();
-          resolve();
-        });
-
-        socket.on('error', () => {
-          // Port not yet open — retry after interval
-          socket.destroy();
-          if (!disposed) {
-            setTimeout(tryConnect, PORT_POLL_INTERVAL_MS);
-          }
-        });
-
-        socket.on('timeout', () => {
-          socket.destroy();
-          if (!disposed) {
-            setTimeout(tryConnect, PORT_POLL_INTERVAL_MS);
-          }
-        });
-
-        socket.connect(port, '127.0.0.1');
-      };
-
-      // Start polling
-      tryConnect();
-    });
+    return false;
   }
 }

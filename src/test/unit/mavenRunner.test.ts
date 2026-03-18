@@ -154,14 +154,14 @@ describe('MavenRunner', () => {
       assert.ok(cmd.args.includes('-Dtest=com.example.RunCucumber'));
     });
 
-    it('omits -Dtest when feature targets are provided (avoids double execution)', async () => {
+    it('excludes runner class when feature targets are provided (avoids double execution)', async () => {
       const ws = makeWorkspaceFolder(tmpDir);
       const cmd = await runner.assembleCommand({
         workspaceFolder: ws,
         featureTargets: ['src/test/resources/login.feature:10'],
-        runnerClass: 'com.example.RunCucumber',
+        runnerClass: 'CucumberTest',
       });
-      assert.ok(!cmd.args.some(a => a.startsWith('-Dtest=')));
+      assert.ok(cmd.args.includes('-Dtest=!CucumberTest'));
     });
 
     it('omits -Dtest when runnerClass is not provided', async () => {
