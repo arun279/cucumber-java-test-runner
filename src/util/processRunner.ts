@@ -1,4 +1,5 @@
-import { spawn, ChildProcess } from 'child_process';
+import { ChildProcess } from 'child_process';
+import crossSpawn from 'cross-spawn';
 import * as vscode from 'vscode';
 import treeKill from 'tree-kill';
 
@@ -33,7 +34,7 @@ export function spawnProcess(
 
     let proc: ChildProcess;
     try {
-      proc = spawn(executable, args, {
+      proc = crossSpawn(executable, args, {
         cwd: options.cwd,
         env,
         stdio: 'pipe',

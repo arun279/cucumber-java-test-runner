@@ -56,7 +56,8 @@ export class MavenRunner implements BuildToolRunner {
     }
 
     const existingPlugins = await this.readExistingPlugins(options.workspaceFolder);
-    const jsonPlugin = `json:${resultsPath}`;
+    // Use forward slashes for the JSON plugin path (Cucumber/Java expects forward slashes)
+    const jsonPlugin = `json:${resultsPath.replace(/\\/g, '/')}`;
     const allPlugins = [...existingPlugins.filter(p => !p.startsWith('json:')), jsonPlugin];
     args.push(`-Dcucumber.plugin=${allPlugins.join(',')}`);
 
