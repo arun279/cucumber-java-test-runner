@@ -11,7 +11,7 @@ export class CucumberTestController implements vscode.Disposable {
   private readonly controller: vscode.TestController;
   private readonly treeBuilder: TestTreeBuilder;
   private readonly testExecutor: TestExecutor;
-  private readonly watchers: FeatureWatcher[] = [];
+  private readonly watcherMap = new Map<string, FeatureWatcher>();
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(
@@ -106,38 +106,22 @@ export class CucumberTestController implements vscode.Disposable {
 
     // Set up file watchers for each workspace folder
     for (const folder of folders) {
-      const watcher = new FeatureWatcher(
-        folder,
-        (uri) => this.handleFeatureChanged(folder, uri),
-        (uri) => this.handleFeatureDeleted(uri),
-      );
-      this.watchers.push(watcher);
-
-      // Initial discovery
-      const featureFiles = await watcher.discoverAll();
-      this.logger.info(
-        `Discovered ${featureFiles.length} feature file(s) in ${folder.name}`,
-      );
-
-      for (const uri of featureFiles) {
-        await this.parseAndAddFile(folder, uri);
-      }
+      await this.setupWatcherForFolder(folder);
     }
 
     // Watch for workspace folder changes
     this.disposables.push(
       vscode.workspace.onDidChangeWorkspaceFolders(() => {
-        // Re-discover on workspace folder changes
         this.controller.refreshHandler?.(new vscode.CancellationTokenSource().token);
       }),
     );
   }
 
   dispose(): void {
-    for (const watcher of this.watchers) {
+    for (const watcher of this.watcherMap.values()) {
       watcher.dispose();
     }
-    this.watchers.length = 0;
+    this.watcherMap.clear();
 
     for (const d of this.disposables) {
       d.dispose();
@@ -145,31 +129,47 @@ export class CucumberTestController implements vscode.Disposable {
     this.disposables.length = 0;
   }
 
+  private async setupWatcherForFolder(folder: vscode.WorkspaceFolder): Promise<void> {
+    const key = folder.uri.toString();
+
+    // Don't create duplicate watchers
+    if (this.watcherMap.has(key)) return;
+
+    const watcher = new FeatureWatcher(
+      folder,
+      (uri) => this.handleFeatureChanged(folder, uri),
+      (uri) => this.handleFeatureDeleted(uri),
+    );
+    this.watcherMap.set(key, watcher);
+
+    // Initial discovery
+    const featureFiles = await watcher.discoverAll();
+    this.logger.info(
+      `Discovered ${featureFiles.length} feature file(s) in ${folder.name}`,
+    );
+
+    for (const uri of featureFiles) {
+      await this.parseAndAddFile(folder, uri);
+    }
+  }
+
   private async discoverAllWorkspaces(): Promise<void> {
     const folders = vscode.workspace.workspaceFolders;
     if (!folders) return;
 
     for (const folder of folders) {
-      // Create a temporary watcher for discovery if needed
-      let watcher = this.watchers.find(w => {
-        // Find the watcher for this folder
-        // FeatureWatcher doesn't expose the folder, so we rely on
-        // the watchers being created in order
-        return true;
-      });
+      const key = folder.uri.toString();
+      const watcher = this.watcherMap.get(key);
 
-      if (!watcher) {
-        watcher = new FeatureWatcher(
-          folder,
-          (uri) => this.handleFeatureChanged(folder, uri),
-          (uri) => this.handleFeatureDeleted(uri),
-        );
-        this.watchers.push(watcher);
-      }
-
-      const featureFiles = await watcher.discoverAll();
-      for (const uri of featureFiles) {
-        await this.parseAndAddFile(folder, uri);
+      if (watcher) {
+        // Use existing watcher for discovery
+        const featureFiles = await watcher.discoverAll();
+        for (const uri of featureFiles) {
+          await this.parseAndAddFile(folder, uri);
+        }
+      } else {
+        // Create new watcher
+        await this.setupWatcherForFolder(folder);
       }
     }
   }
@@ -224,7 +224,6 @@ export class CucumberTestController implements vscode.Disposable {
       // Check if the file already exists in the tree
       const existingItem = this.controller.items.get(uri.toString());
       if (existingItem) {
-        // Sync the existing item
         this.treeBuilder.syncFileItem(
           workspaceFolder,
           result.feature,
@@ -232,7 +231,6 @@ export class CucumberTestController implements vscode.Disposable {
           uri,
         );
       } else {
-        // Add new file
         const fileItem = this.treeBuilder.buildFileItem(
           workspaceFolder,
           result.feature,

@@ -79,7 +79,7 @@ export interface TestItemData {
   line: number;
   scenarioName: string;
   inheritedTags: string[];
-  type: 'feature' | 'rule' | 'scenario' | 'outline' | 'examples' | 'exampleRow';
+  type: 'feature' | 'rule' | 'scenario' | 'outline' | 'examples' | 'exampleRow' | 'background';
 }
 
 // === Execution Types ===
@@ -119,9 +119,6 @@ export interface TestResult {
   failedStepLine?: number;
 }
 
-export interface ProcessResult {
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-  killed: boolean;
-}
+// Note: ProcessResult is also defined in util/processRunner.ts
+// Import from there for process-related code
+export { type ProcessResult } from '../util/processRunner';

@@ -281,24 +281,45 @@ export class TestExecutor {
       resultMap.set(result.testItemId, result);
     }
 
+    // Build additional lookup indexes for robust matching
+    // Index by filename#line for fallback matching
+    const byFilenameLine = new Map<string, TestResult>();
+    for (const result of results) {
+      const parts = result.testItemId.split('#');
+      if (parts.length === 2) {
+        const filename = parts[0].split('/').pop() ?? '';
+        byFilenameLine.set(`${filename}#${parts[1]}`, result);
+      }
+    }
+
     // Map results to test items
     for (const item of items) {
       const data = this.treeBuilder.getTestData(item.id);
       if (!data) continue;
 
-      // Primary match: by feature path + line number
-      const primaryKey = `${data.featurePath.replace(/\\/g, '/')}#${data.line}`;
+      // Primary match: by feature path + line number (exact path match)
+      const featurePath = data.featurePath.replace(/\\/g, '/');
+      const primaryKey = `${featurePath}#${data.line}`;
       let result = resultMap.get(primaryKey);
 
-      // Fallback: try matching by scanning results for matching line
+      // Fallback 1: match by just the features/ relative path (handles src/test/resources prefix differences)
       if (!result) {
-        const featurePath = data.featurePath.replace(/\\/g, '/');
-        for (const [key, r] of resultMap) {
-          if (key.endsWith(`#${data.line}`) && key.includes(featurePath.split('/').pop() ?? '')) {
-            result = r;
-            break;
+        const featuresIdx = featurePath.indexOf('features/');
+        if (featuresIdx >= 0) {
+          const shortPath = featurePath.substring(featuresIdx);
+          for (const [key, r] of resultMap) {
+            if (key.endsWith(`#${data.line}`) && key.includes(shortPath)) {
+              result = r;
+              break;
+            }
           }
         }
+      }
+
+      // Fallback 2: match by filename + line number
+      if (!result) {
+        const filename = featurePath.split('/').pop() ?? '';
+        result = byFilenameLine.get(`${filename}#${data.line}`);
       }
 
       if (!result) {

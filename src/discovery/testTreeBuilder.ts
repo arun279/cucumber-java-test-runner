@@ -291,7 +291,7 @@ export class TestTreeBuilder {
       line: background.line,
       scenarioName: background.name || 'Background',
       inheritedTags: [],
-      type: 'scenario',
+      type: 'background',
     });
 
     parentItem.children.add(bgItem);

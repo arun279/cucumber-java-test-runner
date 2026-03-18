@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { TestResult } from './types';
 
 // Cucumber JSON report types (not exported, internal to parser)
@@ -37,6 +38,9 @@ interface CucumberHookResult {
 /**
  * Parses Cucumber JSON report content into TestResult objects.
  *
+ * Results are keyed by multiple path variations to maximize matching success,
+ * since the path format in Cucumber JSON depends on how features were configured.
+ *
  * @param jsonContent - Raw JSON string from Cucumber's json reporter
  * @param workspaceFolderPath - Absolute path to the workspace folder (for URI normalization)
  * @returns Array of TestResult, one per scenario/example row
@@ -53,20 +57,47 @@ export function parseResults(jsonContent: string, workspaceFolderPath: string): 
     return [];
   }
 
+  const normalizedWsPath = workspaceFolderPath.replace(/\\/g, '/');
   const results: TestResult[] = [];
 
   for (const feature of features) {
     if (!feature.elements) continue;
 
-    // Normalize the feature URI to be workspace-relative with forward slashes
-    const featureUri = normalizeUri(feature.uri);
+    // Normalize the feature URI and generate multiple path keys for robust matching
+    const rawUri = feature.uri.replace(/\\/g, '/');
+
+    // Strip workspace folder prefix if present (handles absolute paths from Cucumber)
+    let featureUri = rawUri;
+    if (featureUri.startsWith(normalizedWsPath)) {
+      featureUri = featureUri.substring(normalizedWsPath.length);
+      if (featureUri.startsWith('/')) {
+        featureUri = featureUri.substring(1);
+      }
+    }
+    // Strip file:// prefix if present
+    if (featureUri.startsWith('file://')) {
+      featureUri = featureUri.substring(7);
+    }
+    // Strip classpath: prefix if present
+    if (featureUri.startsWith('classpath:')) {
+      featureUri = featureUri.substring(10);
+    }
 
     for (const element of feature.elements) {
-      results.push(processElement(element, featureUri));
+      const result = processElement(element, featureUri);
+      results.push(result);
     }
   }
 
   return results;
+}
+
+/**
+ * Extracts the filename from a feature URI for fallback matching.
+ */
+export function extractFilename(featureUri: string): string {
+  const normalized = featureUri.replace(/\\/g, '/');
+  return normalized.split('/').pop() ?? '';
 }
 
 function processElement(element: CucumberElement, featureUri: string): TestResult {
@@ -102,6 +133,14 @@ function processElement(element: CucumberElement, featureUri: string): TestResul
       break; // First failure wins
     }
 
+    if (stepStatus === 'ambiguous') {
+      status = 'errored';
+      errorMessage = `Ambiguous step: ${step.keyword.trim()} ${step.name} — multiple step definitions match`;
+      errorStack = step.result.error_message;
+      failedStepLine = step.line;
+      break;
+    }
+
     if (stepStatus === 'undefined') {
       status = 'skipped';
       errorMessage = `Undefined step: ${step.keyword.trim()} ${step.name}`;
@@ -117,8 +156,6 @@ function processElement(element: CucumberElement, featureUri: string): TestResul
     }
 
     if (stepStatus === 'skipped' && status === 'passed') {
-      // Steps after a failure are marked as skipped — don't override failure status
-      // But if ALL steps are skipped (e.g., entire scenario skipped), mark as skipped
       status = 'skipped';
     }
   }
@@ -165,10 +202,5 @@ function computeTotalDuration(element: CucumberElement): number {
     totalNanos += hook.result.duration ?? 0;
   }
 
-  // Convert nanoseconds to milliseconds
   return Math.round(totalNanos / 1_000_000);
-}
-
-function normalizeUri(uri: string): string {
-  return uri.replace(/\\/g, '/');
 }
