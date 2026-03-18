@@ -1,0 +1,191 @@
+[
+  {
+    "line": 2,
+    "elements": [
+      {
+        "line": 8,
+        "name": "Create a new task",
+        "description": "",
+        "type": "scenario",
+        "keyword": "Scenario",
+        "tags": [
+          { "name": "@api", "line": 1 },
+          { "name": "@smoke", "line": 7 }
+        ],
+        "steps": [
+          {
+            "result": { "duration": 52000000, "status": "passed" },
+            "line": 9,
+            "name": "the task repository is empty",
+            "keyword": "Given "
+          },
+          {
+            "result": { "duration": 150000000, "status": "passed" },
+            "line": 10,
+            "name": "I create a task with title \"Test Task\"",
+            "keyword": "When "
+          },
+          {
+            "result": { "duration": 5000000, "status": "passed" },
+            "line": 11,
+            "name": "the response status code should be 201",
+            "keyword": "Then "
+          }
+        ],
+        "before": [
+          { "result": { "duration": 1000000, "status": "passed" } }
+        ],
+        "after": [
+          { "result": { "duration": 500000, "status": "passed" } }
+        ]
+      },
+      {
+        "line": 14,
+        "name": "Update an existing task",
+        "description": "",
+        "type": "scenario",
+        "keyword": "Scenario",
+        "tags": [
+          { "name": "@api", "line": 1 },
+          { "name": "@update", "line": 13 }
+        ],
+        "steps": [
+          {
+            "result": { "duration": 10000000, "status": "passed" },
+            "line": 15,
+            "name": "a task exists with title \"Old Title\"",
+            "keyword": "Given "
+          },
+          {
+            "result": {
+              "duration": 80000000,
+              "status": "failed",
+              "error_message": "Expected status code 200 but got 404\n\tat com.example.steps.TaskSteps.assertStatus(TaskSteps.java:42)\n\tat ✽.I update the task title to \"New Title\"(task_management.feature:16)"
+            },
+            "line": 16,
+            "name": "I update the task title to \"New Title\"",
+            "keyword": "When "
+          },
+          {
+            "result": { "duration": 0, "status": "skipped" },
+            "line": 17,
+            "name": "the task title should be \"New Title\"",
+            "keyword": "Then "
+          }
+        ]
+      },
+      {
+        "line": 20,
+        "name": "Delete a task",
+        "description": "",
+        "type": "scenario",
+        "keyword": "Scenario",
+        "tags": [
+          { "name": "@api", "line": 1 }
+        ],
+        "steps": [
+          {
+            "result": { "duration": 0, "status": "undefined" },
+            "line": 21,
+            "name": "a task exists to delete",
+            "keyword": "Given "
+          }
+        ]
+      },
+      {
+        "line": 30,
+        "name": "Create tasks with different priorities",
+        "description": "",
+        "type": "scenario",
+        "keyword": "Scenario Outline",
+        "tags": [
+          { "name": "@api", "line": 1 },
+          { "name": "@create", "line": 24 }
+        ],
+        "steps": [
+          {
+            "result": { "duration": 30000000, "status": "passed" },
+            "line": 25,
+            "name": "I create an item with priority \"HIGH\"",
+            "keyword": "When "
+          },
+          {
+            "result": { "duration": 5000000, "status": "passed" },
+            "line": 26,
+            "name": "the item should have priority \"HIGH\"",
+            "keyword": "Then "
+          }
+        ]
+      },
+      {
+        "line": 31,
+        "name": "Create tasks with different priorities",
+        "description": "",
+        "type": "scenario",
+        "keyword": "Scenario Outline",
+        "tags": [
+          { "name": "@api", "line": 1 },
+          { "name": "@create", "line": 24 }
+        ],
+        "steps": [
+          {
+            "result": { "duration": 25000000, "status": "passed" },
+            "line": 25,
+            "name": "I create an item with priority \"LOW\"",
+            "keyword": "When "
+          },
+          {
+            "result": { "duration": 4000000, "status": "passed" },
+            "line": 26,
+            "name": "the item should have priority \"LOW\"",
+            "keyword": "Then "
+          }
+        ]
+      }
+    ],
+    "name": "Task Management",
+    "description": "",
+    "id": "task-management",
+    "keyword": "Feature",
+    "uri": "src/test/resources/features/task_management.feature",
+    "tags": [
+      { "name": "@api", "line": 1 }
+    ]
+  },
+  {
+    "line": 2,
+    "elements": [
+      {
+        "line": 8,
+        "name": "Hook failure scenario",
+        "description": "",
+        "type": "scenario",
+        "keyword": "Scenario",
+        "tags": [],
+        "steps": [
+          {
+            "result": { "duration": 5000000, "status": "passed" },
+            "line": 9,
+            "name": "a simple step",
+            "keyword": "Given "
+          }
+        ],
+        "before": [
+          {
+            "result": {
+              "duration": 1000000,
+              "status": "failed",
+              "error_message": "java.lang.RuntimeException: Before hook failed\n\tat com.example.hooks.Hooks.setup(Hooks.java:15)"
+            }
+          }
+        ]
+      }
+    ],
+    "name": "Hook Failures",
+    "description": "",
+    "id": "hook-failures",
+    "keyword": "Feature",
+    "uri": "src/test/resources/features/hooks.feature",
+    "tags": []
+  }
+]
