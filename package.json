@@ -1,0 +1,91 @@
+{
+  "name": "cucumber-test-runner",
+  "displayName": "Cucumber Test Runner for Java",
+  "description": "Run and debug Cucumber BDD scenarios from VS Code's native Test Explorer. Integrates with Maven and cucumber-junit-platform-engine.",
+  "version": "0.1.0",
+  "publisher": "cucumber-test-runner",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Testing"
+  ],
+  "keywords": [
+    "cucumber",
+    "gherkin",
+    "bdd",
+    "java",
+    "maven",
+    "testing",
+    "spring-boot"
+  ],
+  "activationEvents": [
+    "workspaceContains:src/**/*.feature"
+  ],
+  "main": "./dist/extension.js",
+  "capabilities": {
+    "virtualWorkspaces": false,
+    "untrustedWorkspaces": {
+      "supported": false
+    }
+  },
+  "contributes": {
+    "configuration": {
+      "title": "Cucumber Test Runner",
+      "properties": {
+        "cucumberTestRunner.maven.executable": {
+          "type": "string",
+          "default": "mvn",
+          "description": "Path to Maven executable. The Maven Wrapper (mvnw) is auto-detected and preferred if present."
+        },
+        "cucumberTestRunner.maven.additionalArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Additional Maven command-line arguments (e.g., [\"-Pintegration\"])."
+        },
+        "cucumberTestRunner.runnerClass": {
+          "type": "string",
+          "default": "",
+          "description": "Fully qualified Cucumber runner class name. Auto-detected if empty."
+        },
+        "cucumberTestRunner.featuresPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to features directory relative to workspace root. Auto-detected if empty."
+        },
+        "cucumberTestRunner.defaultTags": {
+          "type": "string",
+          "default": "",
+          "description": "Default tag expression applied to all test runs (e.g., \"not @wip\")."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "node esbuild.js --production",
+    "watch": "node esbuild.js --watch",
+    "test:unit": "mocha --require ts-node/register \"src/test/unit/**/*.test.ts\"",
+    "lint": "tsc --noEmit",
+    "package": "vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "@cucumber/gherkin": "^29.0.0",
+    "@cucumber/messages": "^26.0.0",
+    "tree-kill": "^1.2.2"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.0",
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.95.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.24.0",
+    "mocha": "^10.0.0",
+    "ts-node": "^10.0.0",
+    "typescript": "^5.5.0"
+  }
+}
