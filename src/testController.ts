@@ -60,11 +60,13 @@ export class CucumberTestController implements vscode.Disposable {
     };
 
     this.controller.refreshHandler = async (_token) => {
+      // Clear all items and metadata
       const existingIds: string[] = [];
       this.controller.items.forEach(item => existingIds.push(item.id));
       for (const id of existingIds) {
         this.controller.items.delete(id);
       }
+      this.treeBuilder.clear();
       await this.discoverAllWorkspaces();
     };
   }
@@ -76,7 +78,6 @@ export class CucumberTestController implements vscode.Disposable {
       return;
     }
 
-    // Detect build tool using the shared instance
     let hasMaven = false;
     for (const folder of folders) {
       if (await this.buildToolRunner.detect(folder)
@@ -113,32 +114,25 @@ export class CucumberTestController implements vscode.Disposable {
     this.disposables.length = 0;
   }
 
-  /**
-   * Syncs watchers with current workspace folders:
-   * - Disposes watchers for removed folders
-   * - Creates watchers for new folders
-   * - Refreshes the test tree
-   */
   private syncWatchers(): void {
     const currentFolderKeys = new Set(
       (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.toString()),
     );
 
-    // Dispose watchers for removed folders
     for (const [key, watcher] of this.watcherMap) {
       if (!currentFolderKeys.has(key)) {
         watcher.dispose();
         this.watcherMap.delete(key);
-        this.logger.info(`Removed watcher for closed folder`);
+        this.logger.info('Removed watcher for closed folder');
       }
     }
 
-    // Refresh test tree
     const existingIds: string[] = [];
     this.controller.items.forEach(item => existingIds.push(item.id));
     for (const id of existingIds) {
       this.controller.items.delete(id);
     }
+    this.treeBuilder.clear();
     this.discoverAllWorkspaces();
   }
 
@@ -190,18 +184,11 @@ export class CucumberTestController implements vscode.Disposable {
 
       if (!result.success) {
         this.logger.warn(`Parse error in ${uri.fsPath}: ${result.error.message}`);
-        const errorItem = this.controller.createTestItem(
-          uri.toString(),
-          uri.path.split('/').pop() || 'Unknown',
-          uri,
-        );
-        errorItem.error = result.error.message;
-        this.controller.items.add(errorItem);
         return;
       }
 
-      const fileItem = this.treeBuilder.buildFileItem(result.feature, uri);
-      this.controller.items.add(fileItem);
+      // Tree builder handles placement under the project grouping node
+      this.treeBuilder.buildFileItem(result.feature, uri);
     } catch (err) {
       this.logger.error(`Failed to parse ${uri.fsPath}`, err);
     }
@@ -218,12 +205,12 @@ export class CucumberTestController implements vscode.Disposable {
         return;
       }
 
-      const existingItem = this.controller.items.get(uri.toString());
+      // Find existing file item through project grouping nodes
+      const existingItem = this.treeBuilder.findFileItem(uri);
       if (existingItem) {
         this.treeBuilder.syncFileItem(result.feature, existingItem, uri);
       } else {
-        const fileItem = this.treeBuilder.buildFileItem(result.feature, uri);
-        this.controller.items.add(fileItem);
+        this.treeBuilder.buildFileItem(result.feature, uri);
       }
     } catch (err) {
       this.logger.error(`Failed to handle change for ${uri.fsPath}`, err);
@@ -232,9 +219,8 @@ export class CucumberTestController implements vscode.Disposable {
 
   private handleFeatureDeleted(uri: vscode.Uri): void {
     const fileItemId = uri.toString();
-    const fileItem = this.controller.items.get(fileItemId);
+    const fileItem = this.treeBuilder.findFileItem(uri);
     this.treeBuilder.removeFile(fileItemId, fileItem);
-    this.controller.items.delete(fileItemId);
     this.logger.info(`Removed feature file: ${uri.fsPath}`);
   }
 }

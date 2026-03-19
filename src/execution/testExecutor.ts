@@ -154,14 +154,18 @@ export class TestExecutor {
       if (excluded.has(item.id)) return;
 
       const data = this.treeBuilder.getTestData(item.id);
-      if (!data) return;
+
+      if (!data) {
+        // Project-level grouping items have no metadata — recurse into children
+        item.children.forEach(child => collect(child));
+        return;
+      }
 
       // Leaf-level runnable items: scenarios, example rows
       // Non-runnable: features, rules, outlines (they have children), examples (container), backgrounds
       if (data.type === 'scenario' || data.type === 'exampleRow') {
         items.push(item);
       } else {
-        // Expand children
         item.children.forEach(child => collect(child));
       }
     };

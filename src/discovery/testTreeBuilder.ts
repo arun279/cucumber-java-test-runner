@@ -13,6 +13,7 @@ import { findProjectRoot } from '../util/projectDetector';
 
 export class TestTreeBuilder {
   private readonly testData = new Map<string, TestItemData>();
+  private readonly projectItems = new Map<string, vscode.TestItem>();
 
   constructor(
     private readonly controller: vscode.TestController,
@@ -20,16 +21,19 @@ export class TestTreeBuilder {
   ) {}
 
   /**
-   * Builds the TestItem hierarchy for a parsed feature file and adds it to the controller.
-   * Returns the top-level file TestItem.
+   * Builds the TestItem hierarchy for a parsed feature file and adds it
+   * under the appropriate project grouping node in the controller.
    */
   buildFileItem(
     parsedFeature: ParsedFeature,
     fileUri: vscode.Uri,
-  ): vscode.TestItem {
+  ): void {
     const projectRoot = findProjectRoot(fileUri.fsPath, this.buildFileNames) ?? path.dirname(fileUri.fsPath);
     const projectName = path.basename(projectRoot);
     const featurePath = path.relative(projectRoot, fileUri.fsPath).replace(/\\/g, '/');
+
+    // Get or create the project-level grouping item
+    const projectItem = this.getOrCreateProjectItem(projectRoot, projectName);
 
     const fileItem = this.controller.createTestItem(
       fileUri.toString(),
@@ -37,10 +41,8 @@ export class TestTreeBuilder {
       fileUri,
     );
 
-    // Set range to line 1 (the Feature keyword is typically at the top)
     fileItem.canResolveChildren = false;
 
-    // Store metadata for the feature file item
     this.storeData(fileItem.id, {
       featurePath,
       projectRoot,
@@ -50,18 +52,14 @@ export class TestTreeBuilder {
       type: 'feature',
     });
 
-    // Add tags to the TestItem
     fileItem.tags = this.createTestTags(parsedFeature.tags);
-
-    // Build children
     this.buildFeatureChildren(fileItem, parsedFeature, featurePath, fileUri, parsedFeature.tags, projectRoot, projectName);
 
-    return fileItem;
+    projectItem.children.add(fileItem);
   }
 
   /**
    * Syncs the test tree for a file that has been re-parsed.
-   * Removes stale items, adds new ones, updates changed ones.
    */
   syncFileItem(
     parsedFeature: ParsedFeature,
@@ -72,14 +70,11 @@ export class TestTreeBuilder {
     const projectName = path.basename(projectRoot);
     const featurePath = path.relative(projectRoot, fileUri.fsPath).replace(/\\/g, '/');
 
-    // Clean up old metadata for this file's children
     this.removeChildData(existingFileItem);
 
-    // Update the file item label
     existingFileItem.label = parsedFeature.name || fileUri.path.split('/').pop() || 'Unknown';
     existingFileItem.tags = this.createTestTags(parsedFeature.tags);
 
-    // Update metadata
     this.storeData(existingFileItem.id, {
       featurePath,
       projectRoot,
@@ -89,42 +84,85 @@ export class TestTreeBuilder {
       type: 'feature',
     });
 
-    // Clear existing children
     const oldChildren: string[] = [];
     existingFileItem.children.forEach(child => oldChildren.push(child.id));
     for (const id of oldChildren) {
       existingFileItem.children.delete(id);
     }
 
-    // Rebuild children
     this.buildFeatureChildren(existingFileItem, parsedFeature, featurePath, fileUri, parsedFeature.tags, projectRoot, projectName);
   }
 
   /**
    * Removes a file and all its children from the metadata map.
+   * Also removes the project grouping item if it becomes empty.
    */
   removeFile(fileItemId: string, fileItem?: vscode.TestItem): void {
+    // Get project root from metadata before deleting it
+    const data = this.testData.get(fileItemId);
     this.testData.delete(fileItemId);
     if (fileItem) {
       this.removeChildData(fileItem);
     }
+
+    // Remove from the correct project node and clean up if empty
+    if (data) {
+      const projectItem = this.projectItems.get(data.projectRoot);
+      if (projectItem) {
+        projectItem.children.delete(fileItemId);
+        if (projectItem.children.size === 0) {
+          this.controller.items.delete(projectItem.id);
+          this.projectItems.delete(data.projectRoot);
+        }
+      }
+    }
   }
 
   /**
-   * Gets metadata for a TestItem by ID.
+   * Finds a file item by URI, searching within project grouping items.
    */
+  findFileItem(fileUri: vscode.Uri): vscode.TestItem | undefined {
+    const fileItemId = fileUri.toString();
+    for (const projectItem of this.projectItems.values()) {
+      const item = projectItem.children.get(fileItemId);
+      if (item) return item;
+    }
+    return undefined;
+  }
+
   getTestData(itemId: string): TestItemData | undefined {
     return this.testData.get(itemId);
   }
 
-  /**
-   * Gets all metadata entries.
-   */
   getAllTestData(): Map<string, TestItemData> {
     return this.testData;
   }
 
+  /**
+   * Clears all project items and metadata. Used during refresh.
+   */
+  clear(): void {
+    this.testData.clear();
+    this.projectItems.clear();
+  }
+
   // === Private Methods ===
+
+  /**
+   * Gets or creates a project-level grouping TestItem.
+   * These appear as top-level nodes in the Test Explorer (e.g., "task-manager", "my-api").
+   */
+  private getOrCreateProjectItem(projectRoot: string, projectName: string): vscode.TestItem {
+    let projectItem = this.projectItems.get(projectRoot);
+    if (projectItem) return projectItem;
+
+    const id = `project:${projectRoot}`;
+    projectItem = this.controller.createTestItem(id, projectName);
+    projectItem.canResolveChildren = false;
+    this.controller.items.add(projectItem);
+    this.projectItems.set(projectRoot, projectItem);
+    return projectItem;
+  }
 
   private buildFeatureChildren(
     parentItem: vscode.TestItem,
@@ -173,7 +211,6 @@ export class TestTreeBuilder {
       type: 'rule',
     });
 
-    // Add rule children
     for (const child of rule.children) {
       if (child.background) {
         this.addBackgroundItem(ruleItem, child.background, featurePath, fileUri, projectRoot, projectName);
@@ -248,7 +285,6 @@ export class TestTreeBuilder {
       type: 'examples',
     });
 
-    // Add individual example rows
     for (const row of examples.tableRows) {
       this.addExampleRowItem(
         examplesItem,
@@ -279,7 +315,6 @@ export class TestTreeBuilder {
   ): void {
     const id = `${projectName}/${featurePath}#${row.line}`;
 
-    // Build a descriptive label from the row cells
     const paramParts = headers.map((h, i) => `${h}=${row.cells[i] ?? ''}`);
     const label = paramParts.join(', ');
 
