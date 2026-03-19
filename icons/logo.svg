@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <!-- Shadow for play button -->
+    <filter id="playShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="1" dy="1.5" stdDeviation="2.5" flood-color="#1B5E20" flood-opacity="0.35"/>
+    </filter>
+    <!-- Rind gradient - deep rich green -->
+    <radialGradient id="rindGrad" cx="0.4" cy="0.36" r="0.62">
+      <stop offset="0%" stop-color="#4CAF50"/>
+      <stop offset="55%" stop-color="#388E3C"/>
+      <stop offset="100%" stop-color="#1B5E20"/>
+    </radialGradient>
+    <!-- Flesh ring - saturated medium green -->
+    <radialGradient id="fleshGrad" cx="0.46" cy="0.42" r="0.54">
+      <stop offset="0%" stop-color="#7BC67E"/>
+      <stop offset="100%" stop-color="#5CB860"/>
+    </radialGradient>
+    <!-- Seed zone - lighter but still clearly green -->
+    <radialGradient id="seedZoneGrad" cx="0.47" cy="0.44" r="0.53">
+      <stop offset="0%" stop-color="#B8DEB9"/>
+      <stop offset="100%" stop-color="#98D09B"/>
+    </radialGradient>
+    <!-- Center cavity - palest, clearly different from seed zone -->
+    <radialGradient id="centerGrad" cx="0.47" cy="0.44" r="0.55">
+      <stop offset="0%" stop-color="#E8F5E9"/>
+      <stop offset="60%" stop-color="#DAF0DB"/>
+      <stop offset="100%" stop-color="#C0E4C2"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Layer 1: Outer rind -->
+  <circle cx="128" cy="128" r="120" fill="url(#rindGrad)"/>
+
+  <!-- Layer 2: Subtle pale line under the skin -->
+  <circle cx="128" cy="128" r="107" fill="none" stroke="#A5D6A7" stroke-width="1.5" opacity="0.45"/>
+
+  <!-- Layer 3: Flesh ring -->
+  <circle cx="128" cy="128" r="105" fill="url(#fleshGrad)"/>
+
+  <!-- Layer 4: Seed zone -->
+  <circle cx="128" cy="128" r="84" fill="url(#seedZoneGrad)"/>
+
+  <!-- Layer 5: Seeds - 6 seeds at radius 68 from center, 60-degree spacing -->
+  <g opacity="0.9">
+    <ellipse cx="196" cy="128" rx="11" ry="5.5" fill="#EAE4BF" stroke="#B8AD6B" stroke-width="0.8" transform="rotate(0, 128, 128)"/>
+    <ellipse cx="196" cy="128" rx="11" ry="5.5" fill="#EAE4BF" stroke="#B8AD6B" stroke-width="0.8" transform="rotate(60, 128, 128)"/>
+    <ellipse cx="196" cy="128" rx="11" ry="5.5" fill="#EAE4BF" stroke="#B8AD6B" stroke-width="0.8" transform="rotate(120, 128, 128)"/>
+    <ellipse cx="196" cy="128" rx="11" ry="5.5" fill="#EAE4BF" stroke="#B8AD6B" stroke-width="0.8" transform="rotate(180, 128, 128)"/>
+    <ellipse cx="196" cy="128" rx="11" ry="5.5" fill="#EAE4BF" stroke="#B8AD6B" stroke-width="0.8" transform="rotate(240, 128, 128)"/>
+    <ellipse cx="196" cy="128" rx="11" ry="5.5" fill="#EAE4BF" stroke="#B8AD6B" stroke-width="0.8" transform="rotate(300, 128, 128)"/>
+  </g>
+
+  <!-- Layer 6: Center cavity -->
+  <circle cx="128" cy="128" r="50" fill="url(#centerGrad)"/>
+  <!-- Definition ring between seed zone and center -->
+  <circle cx="128" cy="128" r="50.5" fill="none" stroke="#7AB87D" stroke-width="1.2" opacity="0.4"/>
+
+  <!-- Layer 7: Play button with slightly rounded vertices -->
+  <!-- Using a path with rounded line joins for modern feel -->
+  <path d="M 112,93 L 162,128 L 112,163 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round" filter="url(#playShadow)"/>
+
+  <!-- Layer 8: Highlights for dimension -->
+  <ellipse cx="96" cy="66" rx="42" ry="14" fill="white" opacity="0.06" transform="rotate(-28, 96, 66)"/>
+  <circle cx="128" cy="128" r="119.5" fill="none" stroke="white" stroke-width="0.6" opacity="0.1"/>
+</svg>
