@@ -41,10 +41,10 @@ interface CucumberHookResult {
  * since the path format in Cucumber JSON depends on how features were configured.
  *
  * @param jsonContent - Raw JSON string from Cucumber's json reporter
- * @param workspaceFolderPath - Absolute path to the workspace folder (for URI normalization)
+ * @param projectRoot - Absolute path to the Maven project root (for URI normalization)
  * @returns Array of TestResult, one per scenario/example row
  */
-export function parseResults(jsonContent: string, workspaceFolderPath: string): TestResult[] {
+export function parseResults(jsonContent: string, projectRoot: string): TestResult[] {
   let features: CucumberFeature[];
   try {
     features = JSON.parse(jsonContent);
@@ -56,7 +56,7 @@ export function parseResults(jsonContent: string, workspaceFolderPath: string): 
     return [];
   }
 
-  const normalizedWsPath = workspaceFolderPath.replace(/\\/g, '/');
+  const normalizedRoot = projectRoot.replace(/\\/g, '/');
   const results: TestResult[] = [];
 
   for (const feature of features) {
@@ -65,10 +65,10 @@ export function parseResults(jsonContent: string, workspaceFolderPath: string): 
     // Normalize the feature URI and generate multiple path keys for robust matching
     const rawUri = feature.uri.replace(/\\/g, '/');
 
-    // Strip workspace folder prefix if present (handles absolute paths from Cucumber)
+    // Strip project root prefix if present (handles absolute paths from Cucumber)
     let featureUri = rawUri;
-    if (featureUri.startsWith(normalizedWsPath)) {
-      featureUri = featureUri.substring(normalizedWsPath.length);
+    if (featureUri.startsWith(normalizedRoot)) {
+      featureUri = featureUri.substring(normalizedRoot.length);
       if (featureUri.startsWith('/')) {
         featureUri = featureUri.substring(1);
       }
