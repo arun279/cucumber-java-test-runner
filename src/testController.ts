@@ -11,6 +11,7 @@ export class CucumberTestController implements vscode.Disposable {
   private readonly controller: vscode.TestController;
   private readonly treeBuilder: TestTreeBuilder;
   private readonly testExecutor: TestExecutor;
+  private readonly buildToolRunner: MavenRunner;
   private readonly watcherMap = new Map<string, FeatureWatcher>();
   private readonly disposables: vscode.Disposable[] = [];
 
@@ -18,35 +19,29 @@ export class CucumberTestController implements vscode.Disposable {
     private readonly context: vscode.ExtensionContext,
     private readonly logger: Logger,
   ) {
-    // Create the test controller
     this.controller = vscode.tests.createTestController(
       'cucumberTestRunner',
       'Cucumber Tests',
     );
     this.disposables.push(this.controller);
 
-    // Create tree builder
     this.treeBuilder = new TestTreeBuilder(this.controller);
-
-    // Create build tool runner and debug manager
-    const mavenRunner = new MavenRunner();
+    this.buildToolRunner = new MavenRunner();
     const debugManager = new DebugManager(this.logger);
 
-    // Create test executor
     this.testExecutor = new TestExecutor(
       this.controller,
       this.treeBuilder,
-      mavenRunner,
+      this.buildToolRunner,
       debugManager,
       this.logger,
     );
 
-    // Create run profiles
     const runProfile = this.controller.createRunProfile(
       'Run Cucumber Tests',
       vscode.TestRunProfileKind.Run,
       (request, token) => this.testExecutor.executeTests(request, token, false),
-      true, // isDefault
+      true,
     );
     this.disposables.push(runProfile);
 
@@ -58,31 +53,22 @@ export class CucumberTestController implements vscode.Disposable {
     );
     this.disposables.push(debugProfile);
 
-    // Set up the resolve handler for initial discovery
     this.controller.resolveHandler = async (item) => {
       if (!item) {
-        // Initial discovery — scan all workspace folders
         await this.discoverAllWorkspaces();
       }
     };
 
-    // Set up refresh handler
     this.controller.refreshHandler = async (_token) => {
-      // Clear existing items
       const existingIds: string[] = [];
       this.controller.items.forEach(item => existingIds.push(item.id));
       for (const id of existingIds) {
         this.controller.items.delete(id);
       }
-
-      // Re-discover
       await this.discoverAllWorkspaces();
     };
   }
 
-  /**
-   * Activates the controller — sets up file watchers for each workspace folder.
-   */
   async activate(): Promise<void> {
     const folders = vscode.workspace.workspaceFolders;
     if (!folders) {
@@ -90,11 +76,10 @@ export class CucumberTestController implements vscode.Disposable {
       return;
     }
 
-    // Detect build tool
-    const mavenRunner = new MavenRunner();
+    // Detect build tool using the shared instance
     let hasMaven = false;
     for (const folder of folders) {
-      if (await mavenRunner.detect(folder)) {
+      if (await this.buildToolRunner.detect(folder)) {
         hasMaven = true;
         break;
       }
@@ -104,15 +89,13 @@ export class CucumberTestController implements vscode.Disposable {
       this.logger.warn('No Maven project detected (pom.xml not found)');
     }
 
-    // Set up file watchers for each workspace folder
     for (const folder of folders) {
       await this.setupWatcherForFolder(folder);
     }
 
-    // Watch for workspace folder changes
     this.disposables.push(
       vscode.workspace.onDidChangeWorkspaceFolders(() => {
-        this.controller.refreshHandler?.(new vscode.CancellationTokenSource().token);
+        this.syncWatchers();
       }),
     );
   }
@@ -129,10 +112,37 @@ export class CucumberTestController implements vscode.Disposable {
     this.disposables.length = 0;
   }
 
+  /**
+   * Syncs watchers with current workspace folders:
+   * - Disposes watchers for removed folders
+   * - Creates watchers for new folders
+   * - Refreshes the test tree
+   */
+  private syncWatchers(): void {
+    const currentFolderKeys = new Set(
+      (vscode.workspace.workspaceFolders ?? []).map(f => f.uri.toString()),
+    );
+
+    // Dispose watchers for removed folders
+    for (const [key, watcher] of this.watcherMap) {
+      if (!currentFolderKeys.has(key)) {
+        watcher.dispose();
+        this.watcherMap.delete(key);
+        this.logger.info(`Removed watcher for closed folder`);
+      }
+    }
+
+    // Refresh test tree
+    const existingIds: string[] = [];
+    this.controller.items.forEach(item => existingIds.push(item.id));
+    for (const id of existingIds) {
+      this.controller.items.delete(id);
+    }
+    this.discoverAllWorkspaces();
+  }
+
   private async setupWatcherForFolder(folder: vscode.WorkspaceFolder): Promise<void> {
     const key = folder.uri.toString();
-
-    // Don't create duplicate watchers
     if (this.watcherMap.has(key)) return;
 
     const watcher = new FeatureWatcher(
@@ -142,7 +152,6 @@ export class CucumberTestController implements vscode.Disposable {
     );
     this.watcherMap.set(key, watcher);
 
-    // Initial discovery
     const featureFiles = await watcher.discoverAll();
     this.logger.info(
       `Discovered ${featureFiles.length} feature file(s) in ${folder.name}`,
@@ -162,13 +171,11 @@ export class CucumberTestController implements vscode.Disposable {
       const watcher = this.watcherMap.get(key);
 
       if (watcher) {
-        // Use existing watcher for discovery
         const featureFiles = await watcher.discoverAll();
         for (const uri of featureFiles) {
           await this.parseAndAddFile(folder, uri);
         }
       } else {
-        // Create new watcher
         await this.setupWatcherForFolder(folder);
       }
     }
@@ -185,7 +192,6 @@ export class CucumberTestController implements vscode.Disposable {
 
       if (!result.success) {
         this.logger.warn(`Parse error in ${uri.fsPath}: ${result.error.message}`);
-        // Create an error item so the user can see the problem
         const errorItem = this.controller.createTestItem(
           uri.toString(),
           uri.path.split('/').pop() || 'Unknown',
@@ -221,21 +227,11 @@ export class CucumberTestController implements vscode.Disposable {
         return;
       }
 
-      // Check if the file already exists in the tree
       const existingItem = this.controller.items.get(uri.toString());
       if (existingItem) {
-        this.treeBuilder.syncFileItem(
-          workspaceFolder,
-          result.feature,
-          existingItem,
-          uri,
-        );
+        this.treeBuilder.syncFileItem(workspaceFolder, result.feature, existingItem, uri);
       } else {
-        const fileItem = this.treeBuilder.buildFileItem(
-          workspaceFolder,
-          result.feature,
-          uri,
-        );
+        const fileItem = this.treeBuilder.buildFileItem(workspaceFolder, result.feature, uri);
         this.controller.items.add(fileItem);
       }
     } catch (err) {

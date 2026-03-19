@@ -86,11 +86,14 @@ export class DebugManager {
       },
     );
 
+    let spawnError: Error | undefined;
     processPromise.then((result) => {
       processExited = true;
       processExitCode = result.exitCode;
-    }).catch(() => {
+    }).catch((err) => {
       processExited = true;
+      spawnError = err instanceof Error ? err : new Error(String(err));
+      this.logger.error('Maven process spawn failed', spawnError);
     });
 
     // Poll the debug port until it accepts connections
@@ -99,6 +102,9 @@ export class DebugManager {
       await this.waitForPort(debugPort, DEBUG_TIMEOUT_MS, () => processExited, cancellation);
     } catch (err) {
       this.logger.error('Failed waiting for JDWP', err);
+      if (spawnError) {
+        throw spawnError;
+      }
       if (processExited) {
         throw new Error(
           `Maven process exited (code ${processExitCode}) before the debug port became ready. ` +

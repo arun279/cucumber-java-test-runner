@@ -1,4 +1,3 @@
-import * as path from 'path';
 import { TestResult } from './types';
 
 // Cucumber JSON report types (not exported, internal to parser)
@@ -90,14 +89,6 @@ export function parseResults(jsonContent: string, workspaceFolderPath: string): 
   }
 
   return results;
-}
-
-/**
- * Extracts the filename from a feature URI for fallback matching.
- */
-export function extractFilename(featureUri: string): string {
-  const normalized = featureUri.replace(/\\/g, '/');
-  return normalized.split('/').pop() ?? '';
 }
 
 function processElement(element: CucumberElement, featureUri: string): TestResult {
