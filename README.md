@@ -96,6 +96,17 @@ Multiple Maven projects in one workspace are automatically detected and grouped 
 - **Multi-module Maven projects** (parent POM with `<modules>`) are not supported. The extension detects independent Maven projects within a workspace by finding the nearest `pom.xml` with a `src/` directory. Multi-module aggregator POMs without `src/` are skipped.
 - **Debug mode** supports one project at a time. If you select tests from multiple projects and click Debug, only the first project runs in debug mode. The rest are skipped with a warning. Run mode handles multiple projects sequentially without this restriction.
 
+## Releasing New Versions
+
+The `main` branch is protected — all changes go through pull requests. Publishing to the VS Code Marketplace is automated via GitHub Actions:
+
+1. Create a branch and make your changes
+2. Bump `version` in `package.json` (e.g., `"0.1.1"` → `"0.2.0"`)
+3. Open a PR and merge to `main`
+4. CI detects the version change, runs tests, publishes to the marketplace, and creates a git tag
+
+If the version in `package.json` is unchanged, CI skips publishing. Only version bumps trigger a release.
+
 ## How It Works
 
 1. **Discovery**: Parses `.feature` files using the official `@cucumber/gherkin` parser (the same one the Cucumber VS Code extension uses)
