@@ -9,41 +9,44 @@ const CACHE_TTL_MS = 60_000; // 1 minute
 const cache = new Map<string, CachedResult>();
 
 /**
- * Detects the Cucumber runner class in the workspace.
+ * Detects the Cucumber runner class in the project.
  * Scans src/test/java/**\/*.java for @IncludeEngines("cucumber") or @Cucumber annotations.
- * Results are cached for 60 seconds per workspace folder.
+ * Results are cached for 60 seconds per project root.
  */
 export async function detectRunnerClass(
-  workspaceFolder: vscode.WorkspaceFolder,
+  projectRoot: string,
 ): Promise<string | undefined> {
-  const cacheKey = workspaceFolder.uri.toString();
+  const cacheKey = projectRoot;
   const cached = cache.get(cacheKey);
 
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
     return cached.className;
   }
 
-  const className = await scanForRunnerClass(workspaceFolder);
+  const className = await scanForRunnerClass(projectRoot);
   cache.set(cacheKey, { className, timestamp: Date.now() });
   return className;
 }
 
 /**
- * Clears the cached runner class for a workspace folder.
+ * Clears the cached runner class for a project root.
  */
-export function clearRunnerCache(workspaceFolder?: vscode.WorkspaceFolder): void {
-  if (workspaceFolder) {
-    cache.delete(workspaceFolder.uri.toString());
+export function clearRunnerCache(projectRoot?: string): void {
+  if (projectRoot) {
+    cache.delete(projectRoot);
   } else {
     cache.clear();
   }
 }
 
 async function scanForRunnerClass(
-  workspaceFolder: vscode.WorkspaceFolder,
+  projectRoot: string,
 ): Promise<string | undefined> {
   // Search in src/test/java only (Cucumber runners are test classes)
-  const pattern = new vscode.RelativePattern(workspaceFolder, 'src/test/java/**/*.java');
+  const pattern = new vscode.RelativePattern(
+    vscode.Uri.file(projectRoot),
+    'src/test/java/**/*.java',
+  );
   const files = await vscode.workspace.findFiles(pattern, '**/target/**', 100);
 
   for (const fileUri of files) {

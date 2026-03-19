@@ -9,6 +9,10 @@ const JUNIT_PLATFORM_PROPERTIES = 'junit-platform.properties';
 
 export class MavenRunner implements BuildToolRunner {
 
+  getBuildFileNames(): string[] {
+    return ['pom.xml'];
+  }
+
   async detect(workspaceFolder: vscode.WorkspaceFolder): Promise<boolean> {
     const pomPath = path.join(workspaceFolder.uri.fsPath, 'pom.xml');
     try {
@@ -19,17 +23,49 @@ export class MavenRunner implements BuildToolRunner {
     }
   }
 
-  async resolveExecutable(workspaceFolder: vscode.WorkspaceFolder): Promise<string> {
+  async detectInSubdirectories(workspaceFolder: vscode.WorkspaceFolder): Promise<boolean> {
     const wsRoot = workspaceFolder.uri.fsPath;
+    try {
+      const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(wsRoot));
+      for (const [name, type] of entries) {
+        if (type === vscode.FileType.Directory) {
+          const subdir = path.join(wsRoot, name);
+          for (const buildFile of this.getBuildFileNames()) {
+            try {
+              await vscode.workspace.fs.stat(vscode.Uri.file(path.join(subdir, buildFile)));
+              return true;
+            } catch {
+              // Not found, continue
+            }
+          }
+        }
+      }
+    } catch {
+      // Can't read directory
+    }
+    return false;
+  }
 
+  async resolveExecutable(projectRoot: string, workspaceRoot?: string): Promise<string> {
     const wrapperNames = process.platform === 'win32'
       ? ['mvnw.cmd', 'mvnw']
       : ['mvnw'];
 
+    // Check project root first
     for (const wrapper of wrapperNames) {
-      const wrapperPath = path.join(wsRoot, wrapper);
+      const wrapperPath = path.join(projectRoot, wrapper);
       if (fs.existsSync(wrapperPath)) {
         return wrapperPath;
+      }
+    }
+
+    // Check workspace root as fallback (shared wrapper)
+    if (workspaceRoot && workspaceRoot !== projectRoot) {
+      for (const wrapper of wrapperNames) {
+        const wrapperPath = path.join(workspaceRoot, wrapper);
+        if (fs.existsSync(wrapperPath)) {
+          return wrapperPath;
+        }
       }
     }
 
@@ -37,9 +73,8 @@ export class MavenRunner implements BuildToolRunner {
   }
 
   async assembleCommand(options: RunOptions): Promise<CommandSpec> {
-    const executable = await this.resolveExecutable(options.workspaceFolder);
-    const wsRoot = options.workspaceFolder.uri.fsPath;
-    const resultsPath = this.getResultsFilePath(options.workspaceFolder);
+    const executable = await this.resolveExecutable(options.projectRoot);
+    const resultsPath = this.getResultsFilePath(options.projectRoot);
 
     const args: string[] = ['test'];
 
@@ -64,7 +99,7 @@ export class MavenRunner implements BuildToolRunner {
       args.push(`-Dcucumber.filter.tags=${options.tagExpression}`);
     }
 
-    const existingPlugins = await this.readExistingPlugins(options.workspaceFolder);
+    const existingPlugins = await this.readExistingPlugins(options.projectRoot);
     // Use forward slashes for the JSON plugin path (Cucumber/Java expects forward slashes)
     const jsonPlugin = `json:${resultsPath.replace(/\\/g, '/')}`;
     const allPlugins = [...existingPlugins.filter(p => !p.startsWith('json:')), jsonPlugin];
@@ -79,7 +114,7 @@ export class MavenRunner implements BuildToolRunner {
     return {
       executable,
       args,
-      cwd: wsRoot,
+      cwd: options.projectRoot,
     };
   }
 
@@ -92,13 +127,13 @@ export class MavenRunner implements BuildToolRunner {
     return cmd;
   }
 
-  getResultsFilePath(workspaceFolder: vscode.WorkspaceFolder): string {
-    return path.join(workspaceFolder.uri.fsPath, 'target', RESULTS_FILENAME);
+  getResultsFilePath(projectRoot: string): string {
+    return path.join(projectRoot, 'target', RESULTS_FILENAME);
   }
 
-  async readExistingPlugins(workspaceFolder: vscode.WorkspaceFolder): Promise<string[]> {
+  async readExistingPlugins(projectRoot: string): Promise<string[]> {
     const propsPath = path.join(
-      workspaceFolder.uri.fsPath,
+      projectRoot,
       'src', 'test', 'resources',
       JUNIT_PLATFORM_PROPERTIES,
     );

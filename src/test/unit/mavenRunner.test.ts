@@ -30,6 +30,14 @@ describe('MavenRunner', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
+  // --- getBuildFileNames ---
+
+  describe('getBuildFileNames()', () => {
+    it('returns pom.xml', () => {
+      assert.deepEqual(runner.getBuildFileNames(), ['pom.xml']);
+    });
+  });
+
   // --- detect ---
 
   describe('detect()', () => {
@@ -45,29 +53,83 @@ describe('MavenRunner', () => {
     });
   });
 
+  // --- detectInSubdirectories ---
+
+  describe('detectInSubdirectories()', () => {
+    it('returns true when a subdirectory contains pom.xml', async () => {
+      const subdir = path.join(tmpDir, 'module-a');
+      mkdirp(subdir);
+      fs.writeFileSync(path.join(subdir, 'pom.xml'), '<project/>');
+      const ws = makeWorkspaceFolder(tmpDir);
+      assert.equal(await runner.detectInSubdirectories(ws), true);
+    });
+
+    it('returns false when no subdirectory contains pom.xml', async () => {
+      const subdir = path.join(tmpDir, 'module-a');
+      mkdirp(subdir);
+      // No pom.xml written
+      const ws = makeWorkspaceFolder(tmpDir);
+      assert.equal(await runner.detectInSubdirectories(ws), false);
+    });
+
+    it('ignores files in workspace root (only checks subdirectories)', async () => {
+      fs.writeFileSync(path.join(tmpDir, 'pom.xml'), '<project/>');
+      // No subdirectories at all
+      const ws = makeWorkspaceFolder(tmpDir);
+      assert.equal(await runner.detectInSubdirectories(ws), false);
+    });
+  });
+
   // --- resolveExecutable ---
 
   describe('resolveExecutable()', () => {
-    it('returns wrapper path when mvnw exists', async () => {
+    it('returns wrapper path when mvnw exists in project root', async () => {
       const wrapperName = process.platform === 'win32' ? 'mvnw.cmd' : 'mvnw';
       const wrapperPath = path.join(tmpDir, wrapperName);
       fs.writeFileSync(wrapperPath, '');
-      const ws = makeWorkspaceFolder(tmpDir);
-      assert.equal(await runner.resolveExecutable(ws), wrapperPath);
+      assert.equal(await runner.resolveExecutable(tmpDir), wrapperPath);
+    });
+
+    it('falls back to workspace root wrapper when not in project root', async () => {
+      const wsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maven-ws-'));
+      try {
+        const wrapperName = process.platform === 'win32' ? 'mvnw.cmd' : 'mvnw';
+        const wrapperPath = path.join(wsRoot, wrapperName);
+        fs.writeFileSync(wrapperPath, '');
+        assert.equal(await runner.resolveExecutable(tmpDir, wsRoot), wrapperPath);
+      } finally {
+        fs.rmSync(wsRoot, { recursive: true, force: true });
+      }
+    });
+
+    it('prefers project root wrapper over workspace root wrapper', async () => {
+      const wsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'maven-ws-'));
+      try {
+        const wrapperName = process.platform === 'win32' ? 'mvnw.cmd' : 'mvnw';
+        fs.writeFileSync(path.join(tmpDir, wrapperName), '');
+        fs.writeFileSync(path.join(wsRoot, wrapperName), '');
+        const result = await runner.resolveExecutable(tmpDir, wsRoot);
+        assert.equal(result, path.join(tmpDir, wrapperName));
+      } finally {
+        fs.rmSync(wsRoot, { recursive: true, force: true });
+      }
     });
 
     it('falls back to configured executable when no wrapper exists', async () => {
-      const ws = makeWorkspaceFolder(tmpDir);
       // The mock getConfiguration returns defaultValue, which for getMavenExecutable is 'mvn'
-      assert.equal(await runner.resolveExecutable(ws), 'mvn');
+      assert.equal(await runner.resolveExecutable(tmpDir), 'mvn');
+    });
+
+    it('does not check workspace root when it equals project root', async () => {
+      // No wrapper in tmpDir — should fall back to 'mvn', not loop
+      assert.equal(await runner.resolveExecutable(tmpDir, tmpDir), 'mvn');
     });
 
     if (process.platform === 'win32') {
       it('prefers mvnw.cmd over mvnw on Windows', async () => {
         fs.writeFileSync(path.join(tmpDir, 'mvnw.cmd'), '');
         fs.writeFileSync(path.join(tmpDir, 'mvnw'), '');
-        const ws = makeWorkspaceFolder(tmpDir);
-        const result = await runner.resolveExecutable(ws);
+        const result = await runner.resolveExecutable(tmpDir);
         assert.equal(path.basename(result), 'mvnw.cmd');
       });
     }
@@ -77,9 +139,8 @@ describe('MavenRunner', () => {
 
   describe('getResultsFilePath()', () => {
     it('returns target/cucumber-vscode-results.json', () => {
-      const ws = makeWorkspaceFolder(tmpDir);
       const expected = path.join(tmpDir, 'target', 'cucumber-vscode-results.json');
-      assert.equal(runner.getResultsFilePath(ws), expected);
+      assert.equal(runner.getResultsFilePath(tmpDir), expected);
     });
   });
 
@@ -94,14 +155,12 @@ describe('MavenRunner', () => {
         'cucumber.plugin = pretty, html:target/cucumber-report.html\n',
       );
 
-      const ws = makeWorkspaceFolder(tmpDir);
-      const plugins = await runner.readExistingPlugins(ws);
+      const plugins = await runner.readExistingPlugins(tmpDir);
       assert.deepEqual(plugins, ['pretty', 'html:target/cucumber-report.html']);
     });
 
     it('returns empty array when properties file does not exist', async () => {
-      const ws = makeWorkspaceFolder(tmpDir);
-      const plugins = await runner.readExistingPlugins(ws);
+      const plugins = await runner.readExistingPlugins(tmpDir);
       assert.deepEqual(plugins, []);
     });
 
@@ -113,8 +172,7 @@ describe('MavenRunner', () => {
         'cucumber.glue = com.example.steps\n',
       );
 
-      const ws = makeWorkspaceFolder(tmpDir);
-      const plugins = await runner.readExistingPlugins(ws);
+      const plugins = await runner.readExistingPlugins(tmpDir);
       assert.deepEqual(plugins, []);
     });
 
@@ -126,8 +184,7 @@ describe('MavenRunner', () => {
         'cucumber.plugin=pretty\n',
       );
 
-      const ws = makeWorkspaceFolder(tmpDir);
-      const plugins = await runner.readExistingPlugins(ws);
+      const plugins = await runner.readExistingPlugins(tmpDir);
       assert.deepEqual(plugins, ['pretty']);
     });
   });
@@ -136,18 +193,16 @@ describe('MavenRunner', () => {
 
   describe('assembleCommand()', () => {
     it('includes "test" as the first arg', async () => {
-      const ws = makeWorkspaceFolder(tmpDir);
       const cmd = await runner.assembleCommand({
-        workspaceFolder: ws,
+        projectRoot: tmpDir,
         featureTargets: [],
       });
       assert.equal(cmd.args[0], 'test');
     });
 
     it('includes -Dtest when runnerClass is provided and no feature targets', async () => {
-      const ws = makeWorkspaceFolder(tmpDir);
       const cmd = await runner.assembleCommand({
-        workspaceFolder: ws,
+        projectRoot: tmpDir,
         featureTargets: [],
         runnerClass: 'com.example.RunCucumber',
       });
@@ -155,9 +210,8 @@ describe('MavenRunner', () => {
     });
 
     it('excludes runner class when feature targets are provided (avoids double execution)', async () => {
-      const ws = makeWorkspaceFolder(tmpDir);
       const cmd = await runner.assembleCommand({
-        workspaceFolder: ws,
+        projectRoot: tmpDir,
         featureTargets: ['src/test/resources/login.feature:10'],
         runnerClass: 'CucumberTest',
       });
@@ -165,18 +219,16 @@ describe('MavenRunner', () => {
     });
 
     it('omits -Dtest when runnerClass is not provided', async () => {
-      const ws = makeWorkspaceFolder(tmpDir);
       const cmd = await runner.assembleCommand({
-        workspaceFolder: ws,
+        projectRoot: tmpDir,
         featureTargets: [],
       });
       assert.ok(!cmd.args.some(a => a.startsWith('-Dtest=')));
     });
 
     it('includes -Dcucumber.features for feature targets', async () => {
-      const ws = makeWorkspaceFolder(tmpDir);
       const cmd = await runner.assembleCommand({
-        workspaceFolder: ws,
+        projectRoot: tmpDir,
         featureTargets: ['src/test/resources/login.feature:10', 'src/test/resources/login.feature:20'],
       });
       assert.ok(cmd.args.includes(
@@ -185,18 +237,16 @@ describe('MavenRunner', () => {
     });
 
     it('omits -Dcucumber.features when featureTargets is empty', async () => {
-      const ws = makeWorkspaceFolder(tmpDir);
       const cmd = await runner.assembleCommand({
-        workspaceFolder: ws,
+        projectRoot: tmpDir,
         featureTargets: [],
       });
       assert.ok(!cmd.args.some(a => a.startsWith('-Dcucumber.features=')));
     });
 
     it('includes -Dcucumber.filter.tags when tag expression provided', async () => {
-      const ws = makeWorkspaceFolder(tmpDir);
       const cmd = await runner.assembleCommand({
-        workspaceFolder: ws,
+        projectRoot: tmpDir,
         featureTargets: [],
         tagExpression: '@smoke and not @wip',
       });
@@ -204,9 +254,8 @@ describe('MavenRunner', () => {
     });
 
     it('omits -Dcucumber.filter.tags when no tag expression', async () => {
-      const ws = makeWorkspaceFolder(tmpDir);
       const cmd = await runner.assembleCommand({
-        workspaceFolder: ws,
+        projectRoot: tmpDir,
         featureTargets: [],
       });
       assert.ok(!cmd.args.some(a => a.startsWith('-Dcucumber.filter.tags=')));
@@ -220,9 +269,8 @@ describe('MavenRunner', () => {
         'cucumber.plugin = pretty, html:target/report.html\n',
       );
 
-      const ws = makeWorkspaceFolder(tmpDir);
       const cmd = await runner.assembleCommand({
-        workspaceFolder: ws,
+        projectRoot: tmpDir,
         featureTargets: [],
       });
 
@@ -243,9 +291,8 @@ describe('MavenRunner', () => {
         'cucumber.plugin = pretty, json:target/old-results.json\n',
       );
 
-      const ws = makeWorkspaceFolder(tmpDir);
       const cmd = await runner.assembleCommand({
-        workspaceFolder: ws,
+        projectRoot: tmpDir,
         featureTargets: [],
       });
 
@@ -257,9 +304,8 @@ describe('MavenRunner', () => {
     });
 
     it('includes additional args', async () => {
-      const ws = makeWorkspaceFolder(tmpDir);
       const cmd = await runner.assembleCommand({
-        workspaceFolder: ws,
+        projectRoot: tmpDir,
         featureTargets: [],
         additionalArgs: ['-Pintegration', '-X'],
       });
@@ -268,18 +314,16 @@ describe('MavenRunner', () => {
     });
 
     it('always includes -DfailIfNoTests=false', async () => {
-      const ws = makeWorkspaceFolder(tmpDir);
       const cmd = await runner.assembleCommand({
-        workspaceFolder: ws,
+        projectRoot: tmpDir,
         featureTargets: [],
       });
       assert.ok(cmd.args.includes('-DfailIfNoTests=false'));
     });
 
-    it('sets cwd to workspace root', async () => {
-      const ws = makeWorkspaceFolder(tmpDir);
+    it('sets cwd to project root', async () => {
       const cmd = await runner.assembleCommand({
-        workspaceFolder: ws,
+        projectRoot: tmpDir,
         featureTargets: [],
       });
       assert.equal(cmd.cwd, tmpDir);
@@ -290,9 +334,8 @@ describe('MavenRunner', () => {
 
   describe('assembleDebugCommand()', () => {
     it('adds maven.surefire.debug with correct port', async () => {
-      const ws = makeWorkspaceFolder(tmpDir);
       const cmd = await runner.assembleDebugCommand({
-        workspaceFolder: ws,
+        projectRoot: tmpDir,
         featureTargets: [],
       }, 5005);
 
@@ -305,14 +348,13 @@ describe('MavenRunner', () => {
     });
 
     it('includes all base command args plus debug arg', async () => {
-      const ws = makeWorkspaceFolder(tmpDir);
       const baseCmd = await runner.assembleCommand({
-        workspaceFolder: ws,
+        projectRoot: tmpDir,
         featureTargets: ['f.feature:1'],
         runnerClass: 'com.example.Run',
       });
       const debugCmd = await runner.assembleDebugCommand({
-        workspaceFolder: ws,
+        projectRoot: tmpDir,
         featureTargets: ['f.feature:1'],
         runnerClass: 'com.example.Run',
       }, 9999);

@@ -1,5 +1,7 @@
 import * as fs from 'fs';
 
+export const FileType = { File: 1, Directory: 2, SymbolicLink: 64 };
+
 export const workspace = {
   fs: {
     stat: async (uri: any) => {
@@ -9,6 +11,10 @@ export const workspace = {
       throw new Error('File not found');
     },
     readFile: async () => Buffer.from(''),
+    readDirectory: async (uri: any): Promise<[string, number][]> => {
+      const entries = fs.readdirSync(uri.fsPath, { withFileTypes: true });
+      return entries.map(e => [e.name, e.isDirectory() ? FileType.Directory : FileType.File] as [string, number]);
+    },
   },
   getConfiguration: () => ({ get: (_k: string, d: any) => d }),
   findFiles: async () => [],
