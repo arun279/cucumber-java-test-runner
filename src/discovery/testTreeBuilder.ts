@@ -1,3 +1,4 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import {
   ParsedFeature,
@@ -8,21 +9,28 @@ import {
   ParsedExampleRow,
   TestItemData,
 } from '../execution/types';
+import { findProjectRoot } from '../util/projectDetector';
 
 export class TestTreeBuilder {
   private readonly testData = new Map<string, TestItemData>();
 
-  constructor(private readonly controller: vscode.TestController) {}
+  constructor(
+    private readonly controller: vscode.TestController,
+    private readonly buildFileNames: string[],
+  ) {}
 
   /**
    * Builds the TestItem hierarchy for a parsed feature file and adds it to the controller.
    * Returns the top-level file TestItem.
    */
   buildFileItem(
-    workspaceFolder: vscode.WorkspaceFolder,
     parsedFeature: ParsedFeature,
     fileUri: vscode.Uri,
   ): vscode.TestItem {
+    const projectRoot = findProjectRoot(fileUri.fsPath, this.buildFileNames) ?? path.dirname(fileUri.fsPath);
+    const projectName = path.basename(projectRoot);
+    const featurePath = path.relative(projectRoot, fileUri.fsPath).replace(/\\/g, '/');
+
     const fileItem = this.controller.createTestItem(
       fileUri.toString(),
       parsedFeature.name || fileUri.path.split('/').pop() || 'Unknown',
@@ -33,9 +41,9 @@ export class TestTreeBuilder {
     fileItem.canResolveChildren = false;
 
     // Store metadata for the feature file item
-    const featurePath = vscode.workspace.asRelativePath(fileUri, false);
     this.storeData(fileItem.id, {
       featurePath,
+      projectRoot,
       line: 1,
       scenarioName: parsedFeature.name,
       inheritedTags: parsedFeature.tags,
@@ -46,7 +54,7 @@ export class TestTreeBuilder {
     fileItem.tags = this.createTestTags(parsedFeature.tags);
 
     // Build children
-    this.buildFeatureChildren(fileItem, parsedFeature, featurePath, fileUri, parsedFeature.tags);
+    this.buildFeatureChildren(fileItem, parsedFeature, featurePath, fileUri, parsedFeature.tags, projectRoot, projectName);
 
     return fileItem;
   }
@@ -56,11 +64,14 @@ export class TestTreeBuilder {
    * Removes stale items, adds new ones, updates changed ones.
    */
   syncFileItem(
-    workspaceFolder: vscode.WorkspaceFolder,
     parsedFeature: ParsedFeature,
     existingFileItem: vscode.TestItem,
     fileUri: vscode.Uri,
   ): void {
+    const projectRoot = findProjectRoot(fileUri.fsPath, this.buildFileNames) ?? path.dirname(fileUri.fsPath);
+    const projectName = path.basename(projectRoot);
+    const featurePath = path.relative(projectRoot, fileUri.fsPath).replace(/\\/g, '/');
+
     // Clean up old metadata for this file's children
     this.removeChildData(existingFileItem);
 
@@ -69,9 +80,9 @@ export class TestTreeBuilder {
     existingFileItem.tags = this.createTestTags(parsedFeature.tags);
 
     // Update metadata
-    const featurePath = vscode.workspace.asRelativePath(fileUri, false);
     this.storeData(existingFileItem.id, {
       featurePath,
+      projectRoot,
       line: 1,
       scenarioName: parsedFeature.name,
       inheritedTags: parsedFeature.tags,
@@ -86,7 +97,7 @@ export class TestTreeBuilder {
     }
 
     // Rebuild children
-    this.buildFeatureChildren(existingFileItem, parsedFeature, featurePath, fileUri, parsedFeature.tags);
+    this.buildFeatureChildren(existingFileItem, parsedFeature, featurePath, fileUri, parsedFeature.tags, projectRoot, projectName);
   }
 
   /**
@@ -121,16 +132,18 @@ export class TestTreeBuilder {
     featurePath: string,
     fileUri: vscode.Uri,
     parentTags: string[],
+    projectRoot: string,
+    projectName: string,
   ): void {
     for (const child of feature.children) {
       if (child.background) {
-        this.addBackgroundItem(parentItem, child.background, featurePath, fileUri);
+        this.addBackgroundItem(parentItem, child.background, featurePath, fileUri, projectRoot, projectName);
       }
       if (child.scenario) {
-        this.addScenarioItem(parentItem, child.scenario, featurePath, fileUri, parentTags);
+        this.addScenarioItem(parentItem, child.scenario, featurePath, fileUri, parentTags, projectRoot, projectName);
       }
       if (child.rule) {
-        this.addRuleItem(parentItem, child.rule, featurePath, fileUri, parentTags);
+        this.addRuleItem(parentItem, child.rule, featurePath, fileUri, parentTags, projectRoot, projectName);
       }
     }
   }
@@ -141,8 +154,10 @@ export class TestTreeBuilder {
     featurePath: string,
     fileUri: vscode.Uri,
     parentTags: string[],
+    projectRoot: string,
+    projectName: string,
   ): void {
-    const id = `${featurePath}#${rule.line}`;
+    const id = `${projectName}/${featurePath}#${rule.line}`;
     const ruleItem = this.controller.createTestItem(id, `Rule: ${rule.name}`, fileUri);
     ruleItem.range = new vscode.Range(rule.line - 1, 0, rule.line - 1, 0);
 
@@ -151,6 +166,7 @@ export class TestTreeBuilder {
 
     this.storeData(id, {
       featurePath,
+      projectRoot,
       line: rule.line,
       scenarioName: rule.name,
       inheritedTags: combinedTags,
@@ -160,10 +176,10 @@ export class TestTreeBuilder {
     // Add rule children
     for (const child of rule.children) {
       if (child.background) {
-        this.addBackgroundItem(ruleItem, child.background, featurePath, fileUri);
+        this.addBackgroundItem(ruleItem, child.background, featurePath, fileUri, projectRoot, projectName);
       }
       if (child.scenario) {
-        this.addScenarioItem(ruleItem, child.scenario, featurePath, fileUri, combinedTags);
+        this.addScenarioItem(ruleItem, child.scenario, featurePath, fileUri, combinedTags, projectRoot, projectName);
       }
     }
 
@@ -176,9 +192,11 @@ export class TestTreeBuilder {
     featurePath: string,
     fileUri: vscode.Uri,
     parentTags: string[],
+    projectRoot: string,
+    projectName: string,
   ): void {
     const isOutline = scenario.examples.length > 0;
-    const id = `${featurePath}#${scenario.line}`;
+    const id = `${projectName}/${featurePath}#${scenario.line}`;
     const scenarioItem = this.controller.createTestItem(id, scenario.name, fileUri);
     scenarioItem.range = new vscode.Range(scenario.line - 1, 0, scenario.line - 1, 0);
 
@@ -187,6 +205,7 @@ export class TestTreeBuilder {
 
     this.storeData(id, {
       featurePath,
+      projectRoot,
       line: scenario.line,
       scenarioName: scenario.name,
       inheritedTags: combinedTags,
@@ -195,7 +214,7 @@ export class TestTreeBuilder {
 
     if (isOutline) {
       for (const examples of scenario.examples) {
-        this.addExamplesItem(scenarioItem, examples, featurePath, fileUri, combinedTags, scenario.name);
+        this.addExamplesItem(scenarioItem, examples, featurePath, fileUri, combinedTags, scenario.name, projectRoot, projectName);
       }
     }
 
@@ -209,8 +228,10 @@ export class TestTreeBuilder {
     fileUri: vscode.Uri,
     parentTags: string[],
     scenarioName: string,
+    projectRoot: string,
+    projectName: string,
   ): void {
-    const id = `${featurePath}#${examples.line}`;
+    const id = `${projectName}/${featurePath}#${examples.line}`;
     const label = examples.name ? `Examples: ${examples.name}` : 'Examples';
     const examplesItem = this.controller.createTestItem(id, label, fileUri);
     examplesItem.range = new vscode.Range(examples.line - 1, 0, examples.line - 1, 0);
@@ -220,6 +241,7 @@ export class TestTreeBuilder {
 
     this.storeData(id, {
       featurePath,
+      projectRoot,
       line: examples.line,
       scenarioName: examples.name || 'Examples',
       inheritedTags: combinedTags,
@@ -236,6 +258,8 @@ export class TestTreeBuilder {
         fileUri,
         combinedTags,
         scenarioName,
+        projectRoot,
+        projectName,
       );
     }
 
@@ -250,8 +274,10 @@ export class TestTreeBuilder {
     fileUri: vscode.Uri,
     parentTags: string[],
     scenarioName: string,
+    projectRoot: string,
+    projectName: string,
   ): void {
-    const id = `${featurePath}#${row.line}`;
+    const id = `${projectName}/${featurePath}#${row.line}`;
 
     // Build a descriptive label from the row cells
     const paramParts = headers.map((h, i) => `${h}=${row.cells[i] ?? ''}`);
@@ -263,6 +289,7 @@ export class TestTreeBuilder {
 
     this.storeData(id, {
       featurePath,
+      projectRoot,
       line: row.line,
       scenarioName: `${scenarioName} [${label}]`,
       inheritedTags: parentTags,
@@ -277,8 +304,10 @@ export class TestTreeBuilder {
     background: ParsedBackground,
     featurePath: string,
     fileUri: vscode.Uri,
+    projectRoot: string,
+    projectName: string,
   ): void {
-    const id = `${featurePath}#bg-${background.line}`;
+    const id = `${projectName}/${featurePath}#bg-${background.line}`;
     const label = background.name
       ? `Background: ${background.name}`
       : 'Background';
@@ -288,6 +317,7 @@ export class TestTreeBuilder {
 
     this.storeData(id, {
       featurePath,
+      projectRoot,
       line: background.line,
       scenarioName: background.name || 'Background',
       inheritedTags: [],

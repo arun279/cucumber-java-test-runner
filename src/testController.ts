@@ -25,8 +25,8 @@ export class CucumberTestController implements vscode.Disposable {
     );
     this.disposables.push(this.controller);
 
-    this.treeBuilder = new TestTreeBuilder(this.controller);
     this.buildToolRunner = new MavenRunner();
+    this.treeBuilder = new TestTreeBuilder(this.controller, this.buildToolRunner.getBuildFileNames());
     const debugManager = new DebugManager(this.logger);
 
     this.testExecutor = new TestExecutor(
@@ -79,7 +79,8 @@ export class CucumberTestController implements vscode.Disposable {
     // Detect build tool using the shared instance
     let hasMaven = false;
     for (const folder of folders) {
-      if (await this.buildToolRunner.detect(folder)) {
+      if (await this.buildToolRunner.detect(folder)
+          || await this.buildToolRunner.detectInSubdirectories(folder)) {
         hasMaven = true;
         break;
       }
@@ -202,11 +203,7 @@ export class CucumberTestController implements vscode.Disposable {
         return;
       }
 
-      const fileItem = this.treeBuilder.buildFileItem(
-        workspaceFolder,
-        result.feature,
-        uri,
-      );
+      const fileItem = this.treeBuilder.buildFileItem(result.feature, uri);
       this.controller.items.add(fileItem);
     } catch (err) {
       this.logger.error(`Failed to parse ${uri.fsPath}`, err);
@@ -229,9 +226,9 @@ export class CucumberTestController implements vscode.Disposable {
 
       const existingItem = this.controller.items.get(uri.toString());
       if (existingItem) {
-        this.treeBuilder.syncFileItem(workspaceFolder, result.feature, existingItem, uri);
+        this.treeBuilder.syncFileItem(result.feature, existingItem, uri);
       } else {
-        const fileItem = this.treeBuilder.buildFileItem(workspaceFolder, result.feature, uri);
+        const fileItem = this.treeBuilder.buildFileItem(result.feature, uri);
         this.controller.items.add(fileItem);
       }
     } catch (err) {

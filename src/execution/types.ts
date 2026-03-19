@@ -75,7 +75,8 @@ export type ParseResult = { success: true; feature: ParsedFeature } | { success:
 // === Metadata ===
 
 export interface TestItemData {
-  featurePath: string;          // workspace-relative path
+  featurePath: string;          // project-relative path (e.g., src/test/resources/features/foo.feature)
+  projectRoot: string;          // absolute path to the Maven project root
   line: number;
   scenarioName: string;
   inheritedTags: string[];
@@ -85,17 +86,19 @@ export interface TestItemData {
 // === Execution Types ===
 
 export interface BuildToolRunner {
+  getBuildFileNames(): string[];
   detect(workspaceFolder: vscode.WorkspaceFolder): Promise<boolean>;
-  resolveExecutable(workspaceFolder: vscode.WorkspaceFolder): Promise<string>;
+  detectInSubdirectories(workspaceFolder: vscode.WorkspaceFolder): Promise<boolean>;
+  resolveExecutable(projectRoot: string, workspaceRoot?: string): Promise<string>;
   assembleCommand(options: RunOptions): Promise<CommandSpec>;
   assembleDebugCommand(options: RunOptions, debugPort: number): Promise<CommandSpec>;
-  getResultsFilePath(workspaceFolder: vscode.WorkspaceFolder): string;
-  readExistingPlugins(workspaceFolder: vscode.WorkspaceFolder): Promise<string[]>;
+  getResultsFilePath(projectRoot: string): string;
+  readExistingPlugins(projectRoot: string): Promise<string[]>;
 }
 
 export interface RunOptions {
-  workspaceFolder: vscode.WorkspaceFolder;
-  featureTargets: string[];
+  projectRoot: string;          // absolute path to Maven project root (used as cwd)
+  featureTargets: string[];     // project-relative paths with line numbers
   tagExpression?: string;
   runnerClass?: string;
   additionalArgs?: string[];
