@@ -1,9 +1,9 @@
 {
-  "name": "cucumber-test-runner",
+  "name": "cucumber-java-test-runner",
   "displayName": "Cucumber Test Runner for Java",
   "description": "Run and debug Cucumber BDD scenarios from VS Code's native Test Explorer. Integrates with Maven and cucumber-junit-platform-engine.",
   "version": "0.1.0",
-  "publisher": "cucumber-test-runner",
+  "publisher": "cucumber-java-test-runner",
   "license": "MIT",
   "engines": {
     "vscode": "^1.95.0"
