@@ -98,6 +98,7 @@ export interface BuildToolRunner {
 
 export interface RunOptions {
   projectRoot: string;          // absolute path to Maven project root (used as cwd)
+  workspaceRoot?: string;       // absolute path to workspace root (for shared mvnw fallback)
   featureTargets: string[];     // project-relative paths with line numbers
   tagExpression?: string;
   runnerClass?: string;

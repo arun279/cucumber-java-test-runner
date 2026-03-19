@@ -62,6 +62,12 @@ export class TestExecutor {
         }
       }
 
+      // Resolve workspace root for shared mvnw fallback
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+      // Track reported items to avoid double-marking on cancellation
+      const reportedItems = new Set<string>();
+
       // Execute per project
       for (const [projectRoot, projectItems] of byProject) {
         if (cancellation.isCancellationRequested) break;
@@ -81,6 +87,7 @@ export class TestExecutor {
 
         const runOptions: RunOptions = {
           projectRoot,
+          workspaceRoot,
           featureTargets,
           tagExpression: config.getDefaultTags() || undefined,
           runnerClass,
@@ -98,11 +105,17 @@ export class TestExecutor {
 
         if (!cancellation.isCancellationRequested) {
           await this.reportResults(projectItems, resultsPath, projectRoot, run);
+          for (const item of projectItems) { reportedItems.add(item.id); }
         }
       }
 
       if (cancellation.isCancellationRequested) {
-        this.markRemainingAsSkipped(items, run);
+        // Only skip items that haven't already been reported
+        for (const item of items) {
+          if (!reportedItems.has(item.id)) {
+            run.skipped(item);
+          }
+        }
       }
 
     } catch (err) {
@@ -374,12 +387,6 @@ export class TestExecutor {
       case 'skipped':
         run.skipped(item);
         break;
-    }
-  }
-
-  private markRemainingAsSkipped(items: vscode.TestItem[], run: vscode.TestRun): void {
-    for (const item of items) {
-      run.skipped(item);
     }
   }
 

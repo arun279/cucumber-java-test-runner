@@ -21,7 +21,8 @@
     "spring-boot"
   ],
   "activationEvents": [
-    "workspaceContains:src/**/*.feature"
+    "workspaceContains:src/**/*.feature",
+    "workspaceContains:*/src/**/*.feature"
   ],
   "main": "./dist/extension.js",
   "capabilities": {

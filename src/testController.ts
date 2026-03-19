@@ -148,7 +148,7 @@ export class CucumberTestController implements vscode.Disposable {
 
     const watcher = new FeatureWatcher(
       folder,
-      (uri) => this.handleFeatureChanged(folder, uri),
+      (uri) => this.handleFeatureChanged(uri),
       (uri) => this.handleFeatureDeleted(uri),
     );
     this.watcherMap.set(key, watcher);
@@ -159,7 +159,7 @@ export class CucumberTestController implements vscode.Disposable {
     );
 
     for (const uri of featureFiles) {
-      await this.parseAndAddFile(folder, uri);
+      await this.parseAndAddFile(uri);
     }
   }
 
@@ -174,7 +174,7 @@ export class CucumberTestController implements vscode.Disposable {
       if (watcher) {
         const featureFiles = await watcher.discoverAll();
         for (const uri of featureFiles) {
-          await this.parseAndAddFile(folder, uri);
+          await this.parseAndAddFile(uri);
         }
       } else {
         await this.setupWatcherForFolder(folder);
@@ -182,10 +182,7 @@ export class CucumberTestController implements vscode.Disposable {
     }
   }
 
-  private async parseAndAddFile(
-    workspaceFolder: vscode.WorkspaceFolder,
-    uri: vscode.Uri,
-  ): Promise<void> {
+  private async parseAndAddFile(uri: vscode.Uri): Promise<void> {
     try {
       const contentBytes = await vscode.workspace.fs.readFile(uri);
       const content = Buffer.from(contentBytes).toString('utf-8');
@@ -210,10 +207,7 @@ export class CucumberTestController implements vscode.Disposable {
     }
   }
 
-  private async handleFeatureChanged(
-    workspaceFolder: vscode.WorkspaceFolder,
-    uri: vscode.Uri,
-  ): Promise<void> {
+  private async handleFeatureChanged(uri: vscode.Uri): Promise<void> {
     try {
       const contentBytes = await vscode.workspace.fs.readFile(uri);
       const content = Buffer.from(contentBytes).toString('utf-8');

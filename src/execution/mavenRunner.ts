@@ -73,7 +73,7 @@ export class MavenRunner implements BuildToolRunner {
   }
 
   async assembleCommand(options: RunOptions): Promise<CommandSpec> {
-    const executable = await this.resolveExecutable(options.projectRoot);
+    const executable = await this.resolveExecutable(options.projectRoot, options.workspaceRoot);
     const resultsPath = this.getResultsFilePath(options.projectRoot);
 
     const args: string[] = ['test'];
