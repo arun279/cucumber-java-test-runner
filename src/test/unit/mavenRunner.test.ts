@@ -407,7 +407,7 @@ describe('MavenRunner', () => {
       assert.equal(cmd.args[tagsIdx + 1], 'not @wip');
     });
 
-    it('builds classpath from cp.txt + target dirs', () => {
+    it('writes classpath argfile with target dirs and dependencies', () => {
       mkdirp(path.join(tmpDir, 'target'));
       fs.writeFileSync(path.join(tmpDir, 'target', 'cp.txt'), '/dep1.jar:/dep2.jar');
 
@@ -415,11 +415,18 @@ describe('MavenRunner', () => {
         projectRoot: tmpDir,
         featureTargets: ['f.feature:1'],
       });
-      const cpIdx = cmd.args.indexOf('-cp');
-      const cp = cmd.args[cpIdx + 1];
-      assert.ok(cp.includes('test-classes'), 'Classpath should include target/test-classes');
-      assert.ok(cp.includes('classes'), 'Classpath should include target/classes');
-      assert.ok(cp.includes('dep1.jar'), 'Classpath should include dependencies');
+      // First arg should be @argfile reference
+      assert.ok(cmd.args[0].startsWith('@'), 'First arg should be @argfile');
+      assert.ok(cmd.args[0].includes('cucumber-cli-cp.txt'));
+
+      // Read the argfile and verify classpath content
+      const argFilePath = cmd.args[0].substring(1); // strip @
+      const argContent = fs.readFileSync(argFilePath, 'utf-8');
+      assert.ok(argContent.startsWith('-cp\n'), 'Argfile should start with -cp');
+      assert.ok(argContent.includes('test-classes'), 'Classpath should include target/test-classes');
+      assert.ok(argContent.includes('classes'), 'Classpath should include target/classes');
+      assert.ok(argContent.includes('dep1.jar'), 'Classpath should include dependencies');
+      assert.ok(!argContent.includes('\\'), 'Argfile should use forward slashes');
     });
   });
 
