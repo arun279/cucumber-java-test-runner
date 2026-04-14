@@ -6,6 +6,7 @@ import * as config from '../config/configuration';
 
 const RESULTS_FILENAME = 'cucumber-vscode-results.json';
 const CLASSPATH_FILENAME = 'cp.txt';
+const CLI_ARGFILE = 'cucumber-cli-cp.txt';
 const JUNIT_PLATFORM_PROPERTIES = 'junit-platform.properties';
 
 export class MavenRunner implements BuildToolRunner {
@@ -127,10 +128,12 @@ export class MavenRunner implements BuildToolRunner {
 
   assembleCucumberCliCommand(options: RunOptions): CommandSpec {
     const java = this.resolveJavaExecutable();
-    const classpath = this.resolveTestClasspath(options.projectRoot);
     const resultsPath = this.getResultsFilePath(options.projectRoot);
 
-    const args: string[] = ['-cp', classpath, 'io.cucumber.core.cli.Main'];
+    // Write classpath to an argfile to avoid Windows' 32K command line limit.
+    // Use forward slashes — Java's argfile parser treats backslashes as escapes.
+    const argFilePath = this.writeClasspathArgFile(options.projectRoot);
+    const args: string[] = [`@${argFilePath.replace(/\\/g, '/')}`, 'io.cucumber.core.cli.Main'];
 
     args.push('--plugin', `json:${resultsPath.replace(/\\/g, '/')}`);
 
@@ -189,21 +192,26 @@ export class MavenRunner implements BuildToolRunner {
 
   private resolveJavaExecutable(): string {
     const javaHome = process.env.JAVA_HOME;
+    const exe = process.platform === 'win32' ? 'java.exe' : 'java';
     if (javaHome) {
-      const javaBin = path.join(javaHome, 'bin', 'java');
-      if (fs.existsSync(javaBin) || fs.existsSync(javaBin + '.exe')) {
+      const javaBin = path.join(javaHome, 'bin', exe);
+      if (fs.existsSync(javaBin)) {
         return javaBin;
       }
     }
-    return 'java';
+    return exe;
   }
 
-  private resolveTestClasspath(projectRoot: string): string {
+  private writeClasspathArgFile(projectRoot: string): string {
     const cpFile = path.join(projectRoot, 'target', CLASSPATH_FILENAME);
     const deps = fs.readFileSync(cpFile, 'utf-8').trim();
     const sep = process.platform === 'win32' ? ';' : ':';
     const testClasses = path.join(projectRoot, 'target', 'test-classes');
     const classes = path.join(projectRoot, 'target', 'classes');
-    return [testClasses, classes, deps].filter(Boolean).join(sep);
+    const classpath = [testClasses, classes, deps].filter(Boolean).join(sep);
+
+    const argFile = path.join(projectRoot, 'target', CLI_ARGFILE);
+    fs.writeFileSync(argFile, `-cp\n${classpath.replace(/\\/g, '/')}\n`);
+    return argFile;
   }
 }

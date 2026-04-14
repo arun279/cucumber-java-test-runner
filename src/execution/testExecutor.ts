@@ -97,20 +97,28 @@ export class TestExecutor {
         const resultsPath = this.buildToolRunner.getResultsFilePath(projectRoot);
         this.deleteFileIfExists(resultsPath);
 
-        if (featureTargets.length > 0) {
-          // Specific scenarios: compile then run Cucumber CLI directly
-          if (debug) {
-            await this.executeCucumberCliDebug(runOptions, run, cancellation);
+        try {
+          if (featureTargets.length > 0) {
+            if (debug) {
+              await this.executeCucumberCliDebug(runOptions, run, cancellation);
+            } else {
+              await this.executeCucumberCli(runOptions, run, cancellation);
+            }
           } else {
-            await this.executeCucumberCli(runOptions, run, cancellation);
+            if (debug) {
+              await this.executeDebug(runOptions, projectRoot, run, cancellation);
+            } else {
+              await this.executeRun(runOptions, run, cancellation);
+            }
           }
-        } else {
-          // Run All: Maven test with runner class
-          if (debug) {
-            await this.executeDebug(runOptions, projectRoot, run, cancellation);
-          } else {
-            await this.executeRun(runOptions, run, cancellation);
+        } catch (execErr) {
+          const msg = execErr instanceof Error ? execErr.message : String(execErr);
+          this.logger.error('Execution failed', execErr);
+          for (const item of projectItems) {
+            run.errored(item, new vscode.TestMessage(`Execution failed: ${msg}`));
+            reportedItems.add(item.id);
           }
+          continue;
         }
 
         if (!cancellation.isCancellationRequested) {
