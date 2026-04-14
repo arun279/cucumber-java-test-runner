@@ -67,6 +67,11 @@
           "type": "string",
           "default": "",
           "description": "Default tag expression applied to all test runs (e.g., \"not @wip\")."
+        },
+        "cucumberTestRunner.glue": {
+          "type": "string",
+          "default": "",
+          "description": "Cucumber glue (step definitions) package. Auto-detected from junit-platform.properties if empty. (e.g., \"com.example.steps\")"
         }
       }
     }

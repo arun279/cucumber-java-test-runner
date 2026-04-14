@@ -79,16 +79,18 @@ export class MavenRunner implements BuildToolRunner {
     const args: string[] = ['test'];
 
     if (options.featureTargets.length > 0) {
-      // Target specific features. The Cucumber JUnit Platform Engine discovers
-      // these directly via ServiceLoader using the cucumber.features property.
       args.push(`-Dcucumber.features=${options.featureTargets.join(',')}`);
 
-      // Exclude the @Suite runner class (e.g., CucumberTest) from Surefire's
-      // class scanning to prevent double execution. Without this, Surefire
-      // discovers the engine via ServiceLoader AND discovers the Suite class
-      // via classpath scanning, causing the same scenarios to run twice.
-      if (options.runnerClass) {
-        args.push(`-Dtest=!${options.runnerClass}`);
+      // Only run the Cucumber engine — prevents non-Cucumber tests from
+      // executing and avoids double execution through the Suite engine.
+      args.push('-Dincludejunit5engines=cucumber');
+
+      // Pass glue so the Cucumber engine finds step definitions without
+      // scanning the entire classpath.
+      const glue = config.getGlue()
+        ?? this.readJunitPlatformProperty(options.projectRoot, 'cucumber.glue');
+      if (glue) {
+        args.push(`-Dcucumber.glue=${glue}`);
       }
     } else if (options.runnerClass) {
       // Running ALL tests — use the runner class to scope to Cucumber only.
@@ -132,6 +134,11 @@ export class MavenRunner implements BuildToolRunner {
   }
 
   async readExistingPlugins(projectRoot: string): Promise<string[]> {
+    const value = this.readJunitPlatformProperty(projectRoot, 'cucumber.plugin');
+    return value ? value.split(/\s*,\s*/).filter(p => p.length > 0) : [];
+  }
+
+  private readJunitPlatformProperty(projectRoot: string, key: string): string | undefined {
     const propsPath = path.join(
       projectRoot,
       'src', 'test', 'resources',
@@ -140,14 +147,14 @@ export class MavenRunner implements BuildToolRunner {
 
     try {
       const content = fs.readFileSync(propsPath, 'utf-8');
-      const match = content.match(/^cucumber\.plugin\s*=\s*(.+)$/m);
-      if (match) {
-        return match[1].trim().split(/\s*,\s*/).filter(p => p.length > 0);
-      }
+      const escapedKey = key.replace(/\./g, '\\.');
+      const regex = new RegExp(`^${escapedKey}\\s*=\\s*(.+)$`, 'm');
+      const match = content.match(regex);
+      return match ? match[1].trim() : undefined;
     } catch {
       // File doesn't exist or can't be read
     }
 
-    return [];
+    return undefined;
   }
 }

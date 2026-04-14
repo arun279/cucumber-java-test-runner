@@ -209,13 +209,64 @@ describe('MavenRunner', () => {
       assert.ok(cmd.args.includes('-Dtest=com.example.RunCucumber'));
     });
 
-    it('excludes runner class when feature targets are provided (avoids double execution)', async () => {
+    it('uses engine filtering when feature targets are provided (avoids double execution)', async () => {
       const cmd = await runner.assembleCommand({
         projectRoot: tmpDir,
         featureTargets: ['src/test/resources/login.feature:10'],
         runnerClass: 'CucumberTest',
       });
-      assert.ok(cmd.args.includes('-Dtest=!CucumberTest'));
+      assert.ok(cmd.args.includes('-Dincludejunit5engines=cucumber'),
+        'Should include engine filter');
+      assert.ok(!cmd.args.some(a => a.startsWith('-Dtest=!')),
+        'Should NOT use -Dtest=! exclusion');
+    });
+
+    it('uses engine filtering even without runnerClass when feature targets are provided', async () => {
+      const cmd = await runner.assembleCommand({
+        projectRoot: tmpDir,
+        featureTargets: ['src/test/resources/login.feature:10'],
+      });
+      assert.ok(cmd.args.includes('-Dincludejunit5engines=cucumber'),
+        'Should include engine filter even without runnerClass');
+      assert.ok(!cmd.args.some(a => a.startsWith('-Dtest=')),
+        'Should not have any -Dtest arg');
+    });
+
+    it('reads cucumber.glue from junit-platform.properties when feature targets are provided', async () => {
+      const propsDir = path.join(tmpDir, 'src', 'test', 'resources');
+      mkdirp(propsDir);
+      fs.writeFileSync(
+        path.join(propsDir, 'junit-platform.properties'),
+        'cucumber.glue = com.example.steps\n',
+      );
+
+      const cmd = await runner.assembleCommand({
+        projectRoot: tmpDir,
+        featureTargets: ['src/test/resources/login.feature:10'],
+      });
+      assert.ok(cmd.args.includes('-Dcucumber.glue=com.example.steps'),
+        'Should pass glue from properties file');
+    });
+
+    it('omits -Dcucumber.glue when not configured anywhere', async () => {
+      const cmd = await runner.assembleCommand({
+        projectRoot: tmpDir,
+        featureTargets: ['src/test/resources/login.feature:10'],
+      });
+      assert.ok(!cmd.args.some(a => a.startsWith('-Dcucumber.glue=')),
+        'Should not have glue arg when not configured');
+    });
+
+    it('does not use engine filtering when featureTargets is empty (Run All)', async () => {
+      const cmd = await runner.assembleCommand({
+        projectRoot: tmpDir,
+        featureTargets: [],
+        runnerClass: 'com.example.RunCucumber',
+      });
+      assert.ok(!cmd.args.includes('-Dincludejunit5engines=cucumber'),
+        'Should not include engine filter for Run All');
+      assert.ok(cmd.args.includes('-Dtest=com.example.RunCucumber'),
+        'Should use -Dtest for Run All');
     });
 
     it('omits -Dtest when runnerClass is not provided', async () => {
