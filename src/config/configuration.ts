@@ -24,3 +24,8 @@ export function getDefaultTags(): string | undefined {
   const value = vscode.workspace.getConfiguration(SECTION).get<string>('defaultTags', '');
   return value || undefined;
 }
+
+export function getGlue(): string | undefined {
+  const value = vscode.workspace.getConfiguration(SECTION).get<string>('glue', '');
+  return value || undefined;
+}
