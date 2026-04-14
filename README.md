@@ -17,7 +17,7 @@ Run and debug Cucumber BDD scenarios from VS Code's native Test Explorer.
 
 ## Requirements
 
-- **Maven** — the project must use Maven with `maven-surefire-plugin`
+- **Maven** — the project must use Maven with `maven-surefire-plugin` 3.x+
 - **`cucumber-junit-platform-engine`** — Cucumber's JUnit Platform integration must be in your test dependencies
 - **Debugger for Java** (`vscjava.vscode-java-debug`) — required only for debug mode
 
@@ -89,6 +89,7 @@ Multiple Maven projects in one workspace are automatically detected and grouped 
 | `cucumberTestRunner.runnerClass` | *(auto-detected)* | Cucumber runner class name. Scanned from `src/test/java/` if empty. |
 | `cucumberTestRunner.featuresPath` | *(auto-detected)* | Path to features directory relative to project root. |
 | `cucumberTestRunner.defaultTags` | *(none)* | Default tag expression for all runs (e.g., `"not @wip"`). |
+| `cucumberTestRunner.glue` | *(auto-detected)* | Cucumber glue (step definitions) package. Read from `junit-platform.properties` if empty. |
 
 ## Known Limitations
 
