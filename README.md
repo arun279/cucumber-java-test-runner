@@ -17,7 +17,8 @@ Run and debug Cucumber BDD scenarios from VS Code's native Test Explorer.
 
 ## Requirements
 
-- **Maven** — the project must use Maven with `maven-surefire-plugin` 3.x+
+- **Java** — `JAVA_HOME` must be set, or `java` must be on your PATH
+- **Maven** — the project must use Maven with `maven-surefire-plugin`
 - **`cucumber-junit-platform-engine`** — Cucumber's JUnit Platform integration must be in your test dependencies
 - **Debugger for Java** (`vscjava.vscode-java-debug`) — required only for debug mode
 
