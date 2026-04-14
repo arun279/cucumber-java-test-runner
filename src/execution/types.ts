@@ -92,6 +92,9 @@ export interface BuildToolRunner {
   resolveExecutable(projectRoot: string, workspaceRoot?: string): Promise<string>;
   assembleCommand(options: RunOptions): Promise<CommandSpec>;
   assembleDebugCommand(options: RunOptions, debugPort: number): Promise<CommandSpec>;
+  assembleCompileCommand(options: RunOptions): Promise<CommandSpec>;
+  assembleCucumberCliCommand(options: RunOptions): CommandSpec;
+  assembleCucumberCliDebugCommand(options: RunOptions, debugPort: number): CommandSpec;
   getResultsFilePath(projectRoot: string): string;
   readExistingPlugins(projectRoot: string): Promise<string[]>;
 }

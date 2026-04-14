@@ -209,90 +209,12 @@ describe('MavenRunner', () => {
       assert.ok(cmd.args.includes('-Dtest=com.example.RunCucumber'));
     });
 
-    it('uses engine filtering when feature targets are provided (avoids double execution)', async () => {
-      const cmd = await runner.assembleCommand({
-        projectRoot: tmpDir,
-        featureTargets: ['src/test/resources/login.feature:10'],
-        runnerClass: 'CucumberTest',
-      });
-      assert.ok(cmd.args.includes('-Dsurefire.includeJUnit5Engines=cucumber'),
-        'Should include engine filter');
-      assert.ok(!cmd.args.some(a => a.startsWith('-Dtest=!')),
-        'Should NOT use -Dtest=! exclusion');
-    });
-
-    it('uses engine filtering even without runnerClass when feature targets are provided', async () => {
-      const cmd = await runner.assembleCommand({
-        projectRoot: tmpDir,
-        featureTargets: ['src/test/resources/login.feature:10'],
-      });
-      assert.ok(cmd.args.includes('-Dsurefire.includeJUnit5Engines=cucumber'),
-        'Should include engine filter even without runnerClass');
-      assert.ok(!cmd.args.some(a => a.startsWith('-Dtest=')),
-        'Should not have any -Dtest arg');
-    });
-
-    it('reads cucumber.glue from junit-platform.properties when feature targets are provided', async () => {
-      const propsDir = path.join(tmpDir, 'src', 'test', 'resources');
-      mkdirp(propsDir);
-      fs.writeFileSync(
-        path.join(propsDir, 'junit-platform.properties'),
-        'cucumber.glue = com.example.steps\n',
-      );
-
-      const cmd = await runner.assembleCommand({
-        projectRoot: tmpDir,
-        featureTargets: ['src/test/resources/login.feature:10'],
-      });
-      assert.ok(cmd.args.includes('-Dcucumber.glue=com.example.steps'),
-        'Should pass glue from properties file');
-    });
-
-    it('omits -Dcucumber.glue when not configured anywhere', async () => {
-      const cmd = await runner.assembleCommand({
-        projectRoot: tmpDir,
-        featureTargets: ['src/test/resources/login.feature:10'],
-      });
-      assert.ok(!cmd.args.some(a => a.startsWith('-Dcucumber.glue=')),
-        'Should not have glue arg when not configured');
-    });
-
-    it('does not use engine filtering when featureTargets is empty (Run All)', async () => {
-      const cmd = await runner.assembleCommand({
-        projectRoot: tmpDir,
-        featureTargets: [],
-        runnerClass: 'com.example.RunCucumber',
-      });
-      assert.ok(!cmd.args.includes('-Dsurefire.includeJUnit5Engines=cucumber'),
-        'Should not include engine filter for Run All');
-      assert.ok(cmd.args.includes('-Dtest=com.example.RunCucumber'),
-        'Should use -Dtest for Run All');
-    });
-
     it('omits -Dtest when runnerClass is not provided', async () => {
       const cmd = await runner.assembleCommand({
         projectRoot: tmpDir,
         featureTargets: [],
       });
       assert.ok(!cmd.args.some(a => a.startsWith('-Dtest=')));
-    });
-
-    it('includes -Dcucumber.features for feature targets', async () => {
-      const cmd = await runner.assembleCommand({
-        projectRoot: tmpDir,
-        featureTargets: ['src/test/resources/login.feature:10', 'src/test/resources/login.feature:20'],
-      });
-      assert.ok(cmd.args.includes(
-        '-Dcucumber.features=src/test/resources/login.feature:10,src/test/resources/login.feature:20',
-      ));
-    });
-
-    it('omits -Dcucumber.features when featureTargets is empty', async () => {
-      const cmd = await runner.assembleCommand({
-        projectRoot: tmpDir,
-        featureTargets: [],
-      });
-      assert.ok(!cmd.args.some(a => a.startsWith('-Dcucumber.features=')));
     });
 
     it('includes -Dcucumber.filter.tags when tag expression provided', async () => {
@@ -401,12 +323,12 @@ describe('MavenRunner', () => {
     it('includes all base command args plus debug arg', async () => {
       const baseCmd = await runner.assembleCommand({
         projectRoot: tmpDir,
-        featureTargets: ['f.feature:1'],
+        featureTargets: [],
         runnerClass: 'com.example.Run',
       });
       const debugCmd = await runner.assembleDebugCommand({
         projectRoot: tmpDir,
-        featureTargets: ['f.feature:1'],
+        featureTargets: [],
         runnerClass: 'com.example.Run',
       }, 9999);
 
@@ -415,6 +337,109 @@ describe('MavenRunner', () => {
         assert.ok(debugCmd.args.includes(arg), `Debug command should include base arg: ${arg}`);
       }
       assert.equal(debugCmd.args.length, baseCmd.args.length + 1);
+    });
+  });
+
+  // --- assembleCompileCommand ---
+
+  describe('assembleCompileCommand()', () => {
+    it('runs test-compile and dependency:build-classpath', async () => {
+      const cmd = await runner.assembleCompileCommand({
+        projectRoot: tmpDir,
+        featureTargets: [],
+      });
+      assert.equal(cmd.args[0], 'test-compile');
+      assert.equal(cmd.args[1], 'dependency:build-classpath');
+      assert.ok(cmd.args[2].startsWith('-Dmdep.outputFile='));
+      assert.ok(cmd.args[2].includes('cp.txt'));
+      assert.equal(cmd.cwd, tmpDir);
+    });
+  });
+
+  // --- assembleCucumberCliCommand ---
+
+  describe('assembleCucumberCliCommand()', () => {
+    it('invokes io.cucumber.core.cli.Main with feature targets', () => {
+      // Write a classpath file (simulates compile step output)
+      mkdirp(path.join(tmpDir, 'target'));
+      fs.writeFileSync(path.join(tmpDir, 'target', 'cp.txt'), '/some/dep.jar');
+
+      const cmd = runner.assembleCucumberCliCommand({
+        projectRoot: tmpDir,
+        featureTargets: ['src/test/resources/login.feature:10'],
+      });
+      assert.ok(cmd.args.includes('io.cucumber.core.cli.Main'));
+      assert.ok(cmd.args.includes('src/test/resources/login.feature:10'));
+      assert.ok(cmd.args.some(a => a.startsWith('json:')),
+        'Should include json plugin');
+    });
+
+    it('includes --glue from junit-platform.properties', () => {
+      mkdirp(path.join(tmpDir, 'target'));
+      fs.writeFileSync(path.join(tmpDir, 'target', 'cp.txt'), '/some/dep.jar');
+      const propsDir = path.join(tmpDir, 'src', 'test', 'resources');
+      mkdirp(propsDir);
+      fs.writeFileSync(
+        path.join(propsDir, 'junit-platform.properties'),
+        'cucumber.glue = com.example.steps\n',
+      );
+
+      const cmd = runner.assembleCucumberCliCommand({
+        projectRoot: tmpDir,
+        featureTargets: ['f.feature:1'],
+      });
+      const glueIdx = cmd.args.indexOf('--glue');
+      assert.ok(glueIdx >= 0, 'Should have --glue flag');
+      assert.equal(cmd.args[glueIdx + 1], 'com.example.steps');
+    });
+
+    it('includes --tags when tag expression provided', () => {
+      mkdirp(path.join(tmpDir, 'target'));
+      fs.writeFileSync(path.join(tmpDir, 'target', 'cp.txt'), '/some/dep.jar');
+
+      const cmd = runner.assembleCucumberCliCommand({
+        projectRoot: tmpDir,
+        featureTargets: ['f.feature:1'],
+        tagExpression: 'not @wip',
+      });
+      const tagsIdx = cmd.args.indexOf('--tags');
+      assert.ok(tagsIdx >= 0, 'Should have --tags flag');
+      assert.equal(cmd.args[tagsIdx + 1], 'not @wip');
+    });
+
+    it('builds classpath from cp.txt + target dirs', () => {
+      mkdirp(path.join(tmpDir, 'target'));
+      fs.writeFileSync(path.join(tmpDir, 'target', 'cp.txt'), '/dep1.jar:/dep2.jar');
+
+      const cmd = runner.assembleCucumberCliCommand({
+        projectRoot: tmpDir,
+        featureTargets: ['f.feature:1'],
+      });
+      const cpIdx = cmd.args.indexOf('-cp');
+      const cp = cmd.args[cpIdx + 1];
+      assert.ok(cp.includes('test-classes'), 'Classpath should include target/test-classes');
+      assert.ok(cp.includes('classes'), 'Classpath should include target/classes');
+      assert.ok(cp.includes('dep1.jar'), 'Classpath should include dependencies');
+    });
+  });
+
+  // --- assembleCucumberCliDebugCommand ---
+
+  describe('assembleCucumberCliDebugCommand()', () => {
+    it('inserts JDWP agent before main class', () => {
+      mkdirp(path.join(tmpDir, 'target'));
+      fs.writeFileSync(path.join(tmpDir, 'target', 'cp.txt'), '/some/dep.jar');
+
+      const cmd = runner.assembleCucumberCliDebugCommand({
+        projectRoot: tmpDir,
+        featureTargets: ['f.feature:1'],
+      }, 5005);
+
+      const mainIdx = cmd.args.indexOf('io.cucumber.core.cli.Main');
+      const jdwpIdx = cmd.args.findIndex(a => a.includes('jdwp'));
+      assert.ok(jdwpIdx >= 0, 'Should have JDWP arg');
+      assert.ok(jdwpIdx < mainIdx, 'JDWP arg should come before main class');
+      assert.ok(cmd.args[jdwpIdx].includes('address=localhost:5005'));
     });
   });
 });
