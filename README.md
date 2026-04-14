@@ -17,7 +17,8 @@ Run and debug Cucumber BDD scenarios from VS Code's native Test Explorer.
 
 ## Requirements
 
-- **Maven** — the project must use Maven with `maven-surefire-plugin` 3.x+
+- **Java** — `JAVA_HOME` must be set, or `java` must be on your PATH
+- **Maven** — the project must use Maven with `maven-surefire-plugin`
 - **`cucumber-junit-platform-engine`** — Cucumber's JUnit Platform integration must be in your test dependencies
 - **Debugger for Java** (`vscjava.vscode-java-debug`) — required only for debug mode
 
@@ -111,9 +112,10 @@ If the version in `package.json` is unchanged, CI skips publishing. Only version
 ## How It Works
 
 1. **Discovery**: Parses `.feature` files using the official `@cucumber/gherkin` parser (the same one the Cucumber VS Code extension uses)
-2. **Execution**: Runs `mvn test` with `-Dcucumber.features=path/to/file.feature:lineNumber` to target specific scenarios
-3. **Results**: Parses Cucumber's JSON reporter output and maps results back to test items by feature URI and line number
-4. **Debug**: Starts Maven Surefire with JDWP debug arguments, polls the debug port, then attaches VS Code's Java debugger
+2. **Execution (specific scenarios)**: Compiles with `mvn test-compile`, then runs `io.cucumber.core.cli.Main` directly — bypasses Surefire for reliable single-scenario execution
+3. **Execution (Run All)**: Runs `mvn test` with the detected runner class
+4. **Results**: Parses Cucumber's JSON reporter output and maps results back to test items by feature URI and line number
+5. **Debug**: Runs `io.cucumber.core.cli.Main` with JDWP debug arguments, polls the debug port, then attaches VS Code's Java debugger
 
 ## License
 

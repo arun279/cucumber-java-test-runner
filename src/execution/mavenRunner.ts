@@ -5,6 +5,7 @@ import { BuildToolRunner, RunOptions, CommandSpec } from './types';
 import * as config from '../config/configuration';
 
 const RESULTS_FILENAME = 'cucumber-vscode-results.json';
+const CLASSPATH_FILENAME = 'cp.txt';
 const JUNIT_PLATFORM_PROPERTIES = 'junit-platform.properties';
 
 export class MavenRunner implements BuildToolRunner {
@@ -78,23 +79,7 @@ export class MavenRunner implements BuildToolRunner {
 
     const args: string[] = ['test'];
 
-    if (options.featureTargets.length > 0) {
-      args.push(`-Dcucumber.features=${options.featureTargets.join(',')}`);
-
-      // Only run the Cucumber engine — prevents non-Cucumber tests from
-      // executing and avoids double execution through the Suite engine.
-      // User property name: surefire.includeJUnit5Engines (fixed in SUREFIRE-2059).
-      args.push('-Dsurefire.includeJUnit5Engines=cucumber');
-
-      // Pass glue so the Cucumber engine finds step definitions without
-      // scanning the entire classpath.
-      const glue = config.getGlue()
-        ?? this.readJunitPlatformProperty(options.projectRoot, 'cucumber.glue');
-      if (glue) {
-        args.push(`-Dcucumber.glue=${glue}`);
-      }
-    } else if (options.runnerClass) {
-      // Running ALL tests — use the runner class to scope to Cucumber only.
+    if (options.runnerClass) {
       args.push(`-Dtest=${options.runnerClass}`);
     }
 
@@ -130,6 +115,49 @@ export class MavenRunner implements BuildToolRunner {
     return cmd;
   }
 
+  async assembleCompileCommand(options: RunOptions): Promise<CommandSpec> {
+    const executable = await this.resolveExecutable(options.projectRoot, options.workspaceRoot);
+    const cpFile = path.join(options.projectRoot, 'target', CLASSPATH_FILENAME);
+    return {
+      executable,
+      args: ['test-compile', 'dependency:build-classpath', `-Dmdep.outputFile=${cpFile}`],
+      cwd: options.projectRoot,
+    };
+  }
+
+  assembleCucumberCliCommand(options: RunOptions): CommandSpec {
+    const java = this.resolveJavaExecutable();
+    const classpath = this.resolveTestClasspath(options.projectRoot);
+    const resultsPath = this.getResultsFilePath(options.projectRoot);
+
+    const args: string[] = ['-cp', classpath, 'io.cucumber.core.cli.Main'];
+
+    args.push('--plugin', `json:${resultsPath.replace(/\\/g, '/')}`);
+
+    const glue = config.getGlue()
+      ?? this.readJunitPlatformProperty(options.projectRoot, 'cucumber.glue');
+    if (glue) {
+      args.push('--glue', glue);
+    }
+
+    if (options.tagExpression) {
+      args.push('--tags', options.tagExpression);
+    }
+
+    args.push(...options.featureTargets);
+
+    return { executable: java, args, cwd: options.projectRoot };
+  }
+
+  assembleCucumberCliDebugCommand(options: RunOptions, debugPort: number): CommandSpec {
+    const cmd = this.assembleCucumberCliCommand(options);
+    const mainClassIdx = cmd.args.indexOf('io.cucumber.core.cli.Main');
+    cmd.args.splice(mainClassIdx, 0,
+      `-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=localhost:${debugPort}`,
+    );
+    return cmd;
+  }
+
   getResultsFilePath(projectRoot: string): string {
     return path.join(projectRoot, 'target', RESULTS_FILENAME);
   }
@@ -157,5 +185,25 @@ export class MavenRunner implements BuildToolRunner {
     }
 
     return undefined;
+  }
+
+  private resolveJavaExecutable(): string {
+    const javaHome = process.env.JAVA_HOME;
+    if (javaHome) {
+      const javaBin = path.join(javaHome, 'bin', 'java');
+      if (fs.existsSync(javaBin) || fs.existsSync(javaBin + '.exe')) {
+        return javaBin;
+      }
+    }
+    return 'java';
+  }
+
+  private resolveTestClasspath(projectRoot: string): string {
+    const cpFile = path.join(projectRoot, 'target', CLASSPATH_FILENAME);
+    const deps = fs.readFileSync(cpFile, 'utf-8').trim();
+    const sep = process.platform === 'win32' ? ';' : ':';
+    const testClasses = path.join(projectRoot, 'target', 'test-classes');
+    const classes = path.join(projectRoot, 'target', 'classes');
+    return [testClasses, classes, deps].filter(Boolean).join(sep);
   }
 }
