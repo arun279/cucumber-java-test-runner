@@ -100,7 +100,7 @@ export class TestExecutor {
         if (featureTargets.length > 0) {
           // Specific scenarios: compile then run Cucumber CLI directly
           if (debug) {
-            await this.executeCucumberCliDebug(runOptions, projectRoot, run, cancellation);
+            await this.executeCucumberCliDebug(runOptions, run, cancellation);
           } else {
             await this.executeCucumberCli(runOptions, run, cancellation);
           }
@@ -260,29 +260,37 @@ export class TestExecutor {
     return result.exitCode;
   }
 
-  private async executeCucumberCli(
+  private async compileProject(
     options: RunOptions,
     run: vscode.TestRun,
     cancellation: vscode.CancellationToken,
   ): Promise<number> {
-    // Step 1: Compile and resolve classpath
     const compileCmd = await this.buildToolRunner.assembleCompileCommand(options);
     this.logger.info(`Compiling: ${compileCmd.executable} ${compileCmd.args.join(' ')}`);
     run.appendOutput(`> ${compileCmd.executable} ${compileCmd.args.join(' ')}\r\n\r\n`);
 
-    const compileResult = await spawnProcess(compileCmd.executable, compileCmd.args, {
+    const result = await spawnProcess(compileCmd.executable, compileCmd.args, {
       cwd: compileCmd.cwd,
       onStdout: (line) => run.appendOutput(line + '\r\n'),
       onStderr: (line) => run.appendOutput(line + '\r\n'),
       cancellation,
     });
 
-    if (compileResult.exitCode !== 0 || compileResult.killed) {
-      this.logger.info(`Compilation failed (exit code ${compileResult.exitCode})`);
-      return compileResult.exitCode;
+    if (result.exitCode !== 0 || result.killed) {
+      this.logger.info(`Compilation failed (exit code ${result.exitCode})`);
     }
 
-    // Step 2: Run Cucumber CLI
+    return result.exitCode;
+  }
+
+  private async executeCucumberCli(
+    options: RunOptions,
+    run: vscode.TestRun,
+    cancellation: vscode.CancellationToken,
+  ): Promise<number> {
+    const compileExit = await this.compileProject(options, run, cancellation);
+    if (compileExit !== 0) return compileExit;
+
     const cmd = this.buildToolRunner.assembleCucumberCliCommand(options);
     this.logger.info(`Running: ${cmd.executable} ${cmd.args.join(' ')}`);
     run.appendOutput(`\r\n> ${cmd.executable} ${cmd.args.join(' ')}\r\n\r\n`);
@@ -305,30 +313,15 @@ export class TestExecutor {
 
   private async executeCucumberCliDebug(
     options: RunOptions,
-    projectRoot: string,
     run: vscode.TestRun,
     cancellation: vscode.CancellationToken,
   ): Promise<number> {
-    // Step 1: Compile
-    const compileCmd = await this.buildToolRunner.assembleCompileCommand(options);
-    this.logger.info(`Compiling: ${compileCmd.executable} ${compileCmd.args.join(' ')}`);
-    run.appendOutput(`> ${compileCmd.executable} ${compileCmd.args.join(' ')}\r\n\r\n`);
+    const compileExit = await this.compileProject(options, run, cancellation);
+    if (compileExit !== 0) return compileExit;
 
-    const compileResult = await spawnProcess(compileCmd.executable, compileCmd.args, {
-      cwd: compileCmd.cwd,
-      onStdout: (line) => run.appendOutput(line + '\r\n'),
-      onStderr: (line) => run.appendOutput(line + '\r\n'),
-      cancellation,
-    });
-
-    if (compileResult.exitCode !== 0 || compileResult.killed) {
-      this.logger.info(`Compilation failed (exit code ${compileResult.exitCode})`);
-      return compileResult.exitCode;
-    }
-
-    // Step 2: Run Cucumber CLI with JDWP
-    const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(projectRoot))
-      ?? vscode.workspace.workspaceFolders?.[0];
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(
+      vscode.Uri.file(options.projectRoot),
+    ) ?? vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
       throw new Error('No workspace folder found for debug session');
     }

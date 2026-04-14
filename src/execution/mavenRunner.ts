@@ -5,6 +5,7 @@ import { BuildToolRunner, RunOptions, CommandSpec } from './types';
 import * as config from '../config/configuration';
 
 const RESULTS_FILENAME = 'cucumber-vscode-results.json';
+const CLASSPATH_FILENAME = 'cp.txt';
 const JUNIT_PLATFORM_PROPERTIES = 'junit-platform.properties';
 
 export class MavenRunner implements BuildToolRunner {
@@ -116,7 +117,7 @@ export class MavenRunner implements BuildToolRunner {
 
   async assembleCompileCommand(options: RunOptions): Promise<CommandSpec> {
     const executable = await this.resolveExecutable(options.projectRoot, options.workspaceRoot);
-    const cpFile = path.join(options.projectRoot, 'target', 'cp.txt');
+    const cpFile = path.join(options.projectRoot, 'target', CLASSPATH_FILENAME);
     return {
       executable,
       args: ['test-compile', 'dependency:build-classpath', `-Dmdep.outputFile=${cpFile}`],
@@ -198,7 +199,7 @@ export class MavenRunner implements BuildToolRunner {
   }
 
   private resolveTestClasspath(projectRoot: string): string {
-    const cpFile = path.join(projectRoot, 'target', 'cp.txt');
+    const cpFile = path.join(projectRoot, 'target', CLASSPATH_FILENAME);
     const deps = fs.readFileSync(cpFile, 'utf-8').trim();
     const sep = process.platform === 'win32' ? ';' : ':';
     const testClasses = path.join(projectRoot, 'target', 'test-classes');
