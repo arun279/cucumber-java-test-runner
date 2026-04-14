@@ -83,7 +83,8 @@ export class MavenRunner implements BuildToolRunner {
 
       // Only run the Cucumber engine — prevents non-Cucumber tests from
       // executing and avoids double execution through the Suite engine.
-      args.push('-Dincludejunit5engines=cucumber');
+      // User property name: surefire.includeJUnit5Engines (fixed in SUREFIRE-2059).
+      args.push('-Dsurefire.includeJUnit5Engines=cucumber');
 
       // Pass glue so the Cucumber engine finds step definitions without
       // scanning the entire classpath.

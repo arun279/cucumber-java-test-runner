@@ -215,7 +215,7 @@ describe('MavenRunner', () => {
         featureTargets: ['src/test/resources/login.feature:10'],
         runnerClass: 'CucumberTest',
       });
-      assert.ok(cmd.args.includes('-Dincludejunit5engines=cucumber'),
+      assert.ok(cmd.args.includes('-Dsurefire.includeJUnit5Engines=cucumber'),
         'Should include engine filter');
       assert.ok(!cmd.args.some(a => a.startsWith('-Dtest=!')),
         'Should NOT use -Dtest=! exclusion');
@@ -226,7 +226,7 @@ describe('MavenRunner', () => {
         projectRoot: tmpDir,
         featureTargets: ['src/test/resources/login.feature:10'],
       });
-      assert.ok(cmd.args.includes('-Dincludejunit5engines=cucumber'),
+      assert.ok(cmd.args.includes('-Dsurefire.includeJUnit5Engines=cucumber'),
         'Should include engine filter even without runnerClass');
       assert.ok(!cmd.args.some(a => a.startsWith('-Dtest=')),
         'Should not have any -Dtest arg');
@@ -263,7 +263,7 @@ describe('MavenRunner', () => {
         featureTargets: [],
         runnerClass: 'com.example.RunCucumber',
       });
-      assert.ok(!cmd.args.includes('-Dincludejunit5engines=cucumber'),
+      assert.ok(!cmd.args.includes('-Dsurefire.includeJUnit5Engines=cucumber'),
         'Should not include engine filter for Run All');
       assert.ok(cmd.args.includes('-Dtest=com.example.RunCucumber'),
         'Should use -Dtest for Run All');
