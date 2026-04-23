@@ -3,6 +3,19 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { MavenRunner } from '../../execution/mavenRunner';
+import { clearPhaseCache } from '../../execution/phaseDetector';
+
+const FAILSAFE_POM = `
+  <project>
+    <build>
+      <plugins>
+        <plugin>
+          <artifactId>maven-failsafe-plugin</artifactId>
+        </plugin>
+      </plugins>
+    </build>
+  </project>
+`;
 
 let tmpDir: string;
 let runner: MavenRunner;
@@ -24,6 +37,7 @@ describe('MavenRunner', () => {
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'maven-runner-test-'));
     runner = new MavenRunner();
+    clearPhaseCache();
   });
 
   afterEach(() => {
@@ -303,10 +317,54 @@ describe('MavenRunner', () => {
     });
   });
 
+  // --- assembleCommand with Failsafe / verify phase ---
+
+  describe('assembleCommand() with failsafe pom', () => {
+    beforeEach(() => {
+      fs.writeFileSync(path.join(tmpDir, 'pom.xml'), FAILSAFE_POM);
+    });
+
+    it('uses "verify" as the phase', async () => {
+      const cmd = await runner.assembleCommand({
+        projectRoot: tmpDir,
+        featureTargets: [],
+      });
+      assert.equal(cmd.args[0], 'verify');
+    });
+
+    it('filters failsafe via -Dit.test and also sets -Dtest so surefire matches', async () => {
+      const cmd = await runner.assembleCommand({
+        projectRoot: tmpDir,
+        featureTargets: [],
+        runnerClass: 'com.example.CucumberIT',
+      });
+      assert.ok(cmd.args.includes('-Dit.test=com.example.CucumberIT'));
+      assert.ok(cmd.args.includes('-Dtest=com.example.CucumberIT'));
+    });
+
+    it('adds -Dsurefire.failIfNoSpecifiedTests=false when runnerClass is set', async () => {
+      const cmd = await runner.assembleCommand({
+        projectRoot: tmpDir,
+        featureTargets: [],
+        runnerClass: 'com.example.CucumberIT',
+      });
+      assert.ok(cmd.args.includes('-Dsurefire.failIfNoSpecifiedTests=false'));
+    });
+
+    it('omits surefire.failIfNoSpecifiedTests when no runnerClass is set', async () => {
+      const cmd = await runner.assembleCommand({
+        projectRoot: tmpDir,
+        featureTargets: [],
+      });
+      assert.ok(!cmd.args.includes('-Dsurefire.failIfNoSpecifiedTests=false'));
+      assert.ok(!cmd.args.some(a => a.startsWith('-Dit.test=')));
+    });
+  });
+
   // --- assembleDebugCommand ---
 
   describe('assembleDebugCommand()', () => {
-    it('adds maven.surefire.debug with correct port', async () => {
+    it('adds maven.surefire.debug with correct port (test phase)', async () => {
       const cmd = await runner.assembleDebugCommand({
         projectRoot: tmpDir,
         featureTargets: [],
@@ -318,6 +376,18 @@ describe('MavenRunner', () => {
       assert.ok(debugArg!.includes('suspend=y'));
       assert.ok(debugArg!.includes('server=y'));
       assert.ok(debugArg!.includes('dt_socket'));
+    });
+
+    it('uses maven.failsafe.debug when phase resolves to verify', async () => {
+      fs.writeFileSync(path.join(tmpDir, 'pom.xml'), FAILSAFE_POM);
+
+      const cmd = await runner.assembleDebugCommand({
+        projectRoot: tmpDir,
+        featureTargets: [],
+      }, 5005);
+
+      assert.ok(cmd.args.some(a => a.startsWith('-Dmaven.failsafe.debug=')));
+      assert.ok(!cmd.args.some(a => a.startsWith('-Dmaven.surefire.debug=')));
     });
 
     it('includes all base command args plus debug arg', async () => {

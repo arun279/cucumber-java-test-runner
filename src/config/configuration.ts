@@ -2,12 +2,19 @@ import * as vscode from 'vscode';
 
 const SECTION = 'cucumberTestRunner';
 
+export type MavenPhaseSetting = 'auto' | 'test' | 'verify';
+
 export function getMavenExecutable(): string {
   return vscode.workspace.getConfiguration(SECTION).get<string>('maven.executable', 'mvn');
 }
 
 export function getAdditionalMavenArgs(): string[] {
   return vscode.workspace.getConfiguration(SECTION).get<string[]>('maven.additionalArgs', []);
+}
+
+export function getMavenPhase(): MavenPhaseSetting {
+  const value = vscode.workspace.getConfiguration(SECTION).get<string>('maven.phase', 'auto');
+  return value === 'test' || value === 'verify' ? value : 'auto';
 }
 
 export function getRunnerClass(): string | undefined {

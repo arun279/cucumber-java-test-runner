@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { BuildToolRunner, RunOptions, CommandSpec } from './types';
+import { detectMavenPhase, MavenPhase } from './phaseDetector';
 import * as config from '../config/configuration';
 
 const RESULTS_FILENAME = 'cucumber-vscode-results.json';
@@ -77,11 +78,22 @@ export class MavenRunner implements BuildToolRunner {
   async assembleCommand(options: RunOptions): Promise<CommandSpec> {
     const executable = await this.resolveExecutable(options.projectRoot, options.workspaceRoot);
     const resultsPath = this.getResultsFilePath(options.projectRoot);
+    const phase = this.resolvePhase(options.projectRoot);
 
-    const args: string[] = ['test'];
+    const args: string[] = [phase];
 
     if (options.runnerClass) {
-      args.push(`-Dtest=${options.runnerClass}`);
+      // Surefire reads -Dtest; Failsafe reads -Dit.test. When running `verify`
+      // we set both, plus the matching "fail if no tests" switch, so whichever
+      // plugin picks up the runner class filters correctly and the other stays
+      // quiet instead of failing the build.
+      if (phase === 'verify') {
+        args.push(`-Dit.test=${options.runnerClass}`);
+        args.push(`-Dtest=${options.runnerClass}`);
+        args.push('-Dsurefire.failIfNoSpecifiedTests=false');
+      } else {
+        args.push(`-Dtest=${options.runnerClass}`);
+      }
     }
 
     if (options.tagExpression) {
@@ -109,9 +121,13 @@ export class MavenRunner implements BuildToolRunner {
 
   async assembleDebugCommand(options: RunOptions, debugPort: number): Promise<CommandSpec> {
     const cmd = await this.assembleCommand(options);
+    const phase = this.resolvePhase(options.projectRoot);
 
-    const debugArg = `-Dmaven.surefire.debug=-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=localhost:${debugPort}`;
-    cmd.args.push(debugArg);
+    // Failsafe forks via maven.failsafe.debug; Surefire via maven.surefire.debug.
+    const debugProp = phase === 'verify' ? 'maven.failsafe.debug' : 'maven.surefire.debug';
+    cmd.args.push(
+      `-D${debugProp}=-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=localhost:${debugPort}`,
+    );
 
     return cmd;
   }
@@ -163,6 +179,14 @@ export class MavenRunner implements BuildToolRunner {
 
   getResultsFilePath(projectRoot: string): string {
     return path.join(projectRoot, 'target', RESULTS_FILENAME);
+  }
+
+  resolvePhase(projectRoot: string): MavenPhase {
+    const setting = config.getMavenPhase();
+    if (setting === 'test' || setting === 'verify') {
+      return setting;
+    }
+    return detectMavenPhase(projectRoot);
   }
 
   async readExistingPlugins(projectRoot: string): Promise<string[]> {

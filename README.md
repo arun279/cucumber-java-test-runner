@@ -87,6 +87,7 @@ Multiple Maven projects in one workspace are automatically detected and grouped 
 |---------|---------|-------------|
 | `cucumberTestRunner.maven.executable` | `mvn` | Path to Maven executable. Maven Wrapper is auto-detected and preferred. |
 | `cucumberTestRunner.maven.additionalArgs` | `[]` | Additional Maven arguments (e.g., `["-Pintegration"]`). |
+| `cucumberTestRunner.maven.phase` | `auto` | Lifecycle phase for full-project runs: `auto` (detect), `test` (Surefire), or `verify` (Failsafe). |
 | `cucumberTestRunner.runnerClass` | *(auto-detected)* | Cucumber runner class name. Scanned from `src/test/java/` if empty. |
 | `cucumberTestRunner.featuresPath` | *(auto-detected)* | Path to features directory relative to project root. |
 | `cucumberTestRunner.defaultTags` | *(none)* | Default tag expression for all runs (e.g., `"not @wip"`). |
@@ -113,7 +114,7 @@ If the version in `package.json` is unchanged, CI skips publishing. Only version
 
 1. **Discovery**: Parses `.feature` files using the official `@cucumber/gherkin` parser (the same one the Cucumber VS Code extension uses)
 2. **Execution (specific scenarios)**: Compiles with `mvn test-compile`, then runs `io.cucumber.core.cli.Main` directly — bypasses Surefire for reliable single-scenario execution
-3. **Execution (Run All)**: Runs `mvn test` with the detected runner class
+3. **Execution (Run All)**: Runs `mvn test` with the detected runner class — or `mvn verify` when `pom.xml` declares an active `maven-failsafe-plugin` (passes `-Dit.test=...` so Failsafe filters to the runner class). Override via `cucumberTestRunner.maven.phase`.
 4. **Results**: Parses Cucumber's JSON reporter output and maps results back to test items by feature URI and line number
 5. **Debug**: Runs `io.cucumber.core.cli.Main` with JDWP debug arguments, polls the debug port, then attaches VS Code's Java debugger
 

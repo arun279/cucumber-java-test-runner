@@ -53,6 +53,17 @@
           "default": [],
           "description": "Additional Maven command-line arguments (e.g., [\"-Pintegration\"])."
         },
+        "cucumberTestRunner.maven.phase": {
+          "type": "string",
+          "enum": ["auto", "test", "verify"],
+          "enumDescriptions": [
+            "Detect from pom.xml: use 'verify' when maven-failsafe-plugin is actively declared, otherwise 'test'.",
+            "Always run with 'mvn test' (Surefire).",
+            "Always run with 'mvn verify' (Failsafe; also runs the 'test' phase first)."
+          ],
+          "default": "auto",
+          "description": "Maven lifecycle phase used for full-project runs. 'auto' picks 'verify' when the project configures maven-failsafe-plugin; otherwise 'test'. Single-scenario runs bypass this — they invoke io.cucumber.core.cli.Main directly."
+        },
         "cucumberTestRunner.runnerClass": {
           "type": "string",
           "default": "",
